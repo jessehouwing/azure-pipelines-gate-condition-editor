@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -18,22 +19,39 @@ namespace ServerTaskExpressionTester
 
         private void button1_Click(object sender, EventArgs e)
         {
+            Evaluate();
+        }
+
+        private void Evaluate()
+        {
             var text = expressionEditor.Text;
             foreach (var row in dataGridView1.Rows.Cast<DataGridViewRow>())
             {
-                text = text.Replace("$("+((string)row.Cells[0].Value)+")", (string)row.Cells[1].Value);
+                text = text.Replace("$(" + ((string) row.Cells[0].Value) + ")", (string) row.Cells[1].Value);
             }
 
             try
             {
                 bool result = HttpRequestExpressionParser.EvaluateExpression(null, text, responseEditor.Text);
-                MessageBox.Show(result ? "Success" : "Failed", "Result", MessageBoxButtons.OK, MessageBoxIcon.Information );
+                if (result)
+                {
+                    Status.Text = "Success";
+                    Status.ForeColor = Color.Aquamarine;
+                }
+                else
+                {
+                    Status.Text = "Failed";
+                    Status.ForeColor = Color.Orange;
+                }
+                
+                Llog.Text = string.Empty;
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.GetType() + @" - " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Status.Text = "Error";
+                Status.ForeColor = Color.DarkRed;
+                Llog.Text = ex.GetType() + Environment.NewLine + ex.Message;
             }
-            
         }
 
         public IList<string> GetVariables()
@@ -67,11 +85,13 @@ namespace ServerTaskExpressionTester
             {
                 dataGridView1.Rows.Add(variable, "");
             }
+
+            Evaluate();
         }
         
         private void textBox1_TextChanged(object sender, EventArgs e)
         {
-            
+            Evaluate();
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -106,6 +126,16 @@ namespace ServerTaskExpressionTester
 
             Settings1.Default.Variables = JsonConvert.SerializeObject(variables);
             Settings1.Default.Save();
+        }
+
+        private void LLog_DoubleClick(object sender, EventArgs e)
+        {
+            MessageBox.Show(Llog.Text, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        private void dataGridView1_CellValueChanged(object sender, DataGridViewCellEventArgs e)
+        {
+            Evaluate();
         }
     }
 }
