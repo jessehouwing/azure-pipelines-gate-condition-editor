@@ -32,7 +32,9 @@ namespace ServerTaskExpressionTester
 
             try
             {
+                HttpRequestExpressionParser.ValidateExpressionSyntax(null, text);
                 bool result = HttpRequestExpressionParser.EvaluateExpression(null, text, responseEditor.Text);
+                
                 if (result)
                 {
                     Status.Text = "Success";
@@ -41,7 +43,7 @@ namespace ServerTaskExpressionTester
                 else
                 {
                     Status.Text = "Failed";
-                    Status.ForeColor = Color.Orange;
+                    Status.ForeColor = Color.DarkOrange;
                 }
                 
                 Llog.Text = string.Empty;
@@ -106,11 +108,8 @@ namespace ServerTaskExpressionTester
                 }
             }
             
-            
             expressionEditor.Text = Settings1.Default.Expression;
             responseEditor.Text = Settings1.Default.JsonBody;
-
-            
         }
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
@@ -130,7 +129,10 @@ namespace ServerTaskExpressionTester
 
         private void LLog_DoubleClick(object sender, EventArgs e)
         {
-            MessageBox.Show(Llog.Text, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!string.IsNullOrWhiteSpace(Llog.Text))
+            {
+                MessageBox.Show(Llog.Text, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void dataGridView1_CellValueChanged(object sender, DataGridViewCellEventArgs e)
