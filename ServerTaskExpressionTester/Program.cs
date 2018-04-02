@@ -27,8 +27,10 @@ namespace ServerTaskExpressionTester
             Dictionary<string, string> assemblies = new Dictionary<string, string>
             {
                 ["Microsoft.TeamFoundation.DistributedTask.Orchestration.Server"] = @"Tools\",
-                ["Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions"] = @"Tools\",
+                ["Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions"] = @"Tools\Plugins",
                 ["Microsoft.TeamFoundation.DistributedTask.WebApi"] = @"Tools\",
+                ["Microsoft.VisualStudio.Services.Common"] = @"Tools\",
+                ["Microsoft.VisualStudio.Services.WebApi"] = @"Tools\",
                 ["Microsoft.TeamFoundation.Framework.Server"] = @"Tools\",
                 ["Newtonsoft.Json"] = @"Tools\"
             };
