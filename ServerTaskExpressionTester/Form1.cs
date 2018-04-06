@@ -4,8 +4,10 @@ using System.Drawing;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using Microsoft.TeamFoundation.DistributedTask.Expressions;
 using Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using ServerTaskExpressionTester.Properties;
 
 namespace ServerTaskExpressionTester
@@ -17,24 +19,62 @@ namespace ServerTaskExpressionTester
             InitializeComponent();
         }
 
-        private void button1_Click(object sender, EventArgs e)
-        {
-            Evaluate();
-        }
-
         private void Evaluate()
         {
             var text = expressionEditor.Text;
+            var response = responseEditor.Text;
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(response))
+            {
+                return;
+            }
+
             foreach (var row in dataGridView1.Rows.Cast<DataGridViewRow>())
             {
-                text = text.Replace("$(" + ((string) row.Cells[0].Value) + ")", (string) row.Cells[1].Value);
+                text = text.Replace("$(" + (string) row.Cells[0].Value + ")", (string) row.Cells[1].Value);
+                //text = text.Replace("variables['" + (string) row.Cells[0].Value + "']", (string)row.Cells[1].Value);
+                //text = text.Replace("variables." + (string) row.Cells[0].Value, (string)row.Cells[1].Value);
             }
 
             try
             {
-                HttpRequestExpressionParser.ValidateExpressionSyntax(null, text);
-                bool result = HttpRequestExpressionParser.EvaluateExpression(null, text, responseEditor.Text);
-                
+                Llog.Text = string.Empty;
+
+                INamedValueInfo[] namedValueInfoArray =
+                {
+                    new NamedValueInfo<RootNode>("Root")
+                };
+
+                Type jsonpathFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.JsonPathNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
+                IFunctionInfo jsonpathFunctionInfo = (IFunctionInfo) jsonpathFunction.GetConstructor(new[]{
+                    typeof(string), typeof(int), typeof(int) }
+                ).Invoke(new object[] { "JsonPath", 1, 1});
+
+                Type countFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.CountNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
+                IFunctionInfo countFunctionInfo = (IFunctionInfo) countFunction.GetConstructor(
+                    new[]{ typeof(string), typeof(int), typeof(int) }
+                ).Invoke(new object[] { "Count", 1, 1 });
+
+
+                IFunctionInfo[] functionInfoArray = {
+                    countFunctionInfo,
+                    jsonpathFunctionInfo
+                };
+
+                ExpressionParser parser = new ExpressionParser();
+                var tree = parser.CreateTree(
+                    expression: text,
+                    trace: null,
+                    namedValues: namedValueInfoArray,
+                    functions: functionInfoArray
+                );
+
+                JToken jtoken = JToken.Parse(response);
+                bool result = tree.EvaluateBoolean(
+                    trace: new TextBoxTraceWriter(Llog), 
+                    secretMasker: null, 
+                    state: jtoken
+                );
+
                 if (result)
                 {
                     Status.Text = "Success";
@@ -45,24 +85,23 @@ namespace ServerTaskExpressionTester
                     Status.Text = "Failed";
                     Status.ForeColor = Color.DarkOrange;
                 }
-                
-                Llog.Text = string.Empty;
             }
             catch (Exception ex)
             {
                 Status.Text = "Error";
                 Status.ForeColor = Color.DarkRed;
-                Llog.Text = ex.GetType() + Environment.NewLine + ex.Message;
+                Llog.Text = ex.Message;
             }
         }
 
         public IList<string> GetVariables()
         {
-            var matches = Regex.Matches(expressionEditor.Text, @"\$\(([^\)]+)\)");
+            var matches = Regex.Matches(expressionEditor.Text, @"\$\((?<variablename>[^\)]+)\)");
+            //var matches = Regex.Matches(expressionEditor.Text, @"\$\((?<variablename>[^\)]+)\)|variables\[\'(?<variablename>[^\)]+)'\]|variables\.(?<variablename>[a-zA-Z0-9-_.]+)");
             List<string> result = new List<string>(matches.Count);
             foreach (var m in matches.Cast<Match>())
             {
-                result.Add(m.Groups[1].Value);
+                result.Add(m.Groups["variablename"].Value);
             }
 
             return result;
