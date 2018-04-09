@@ -14,9 +14,27 @@ namespace ServerTaskExpressionTester
 {
     public partial class Form1 : Form
     {
+        private INamedValueInfo[] _namedValueInfoArray;
+        private IFunctionInfo _jsonpathFunctionInfo;
+        private IFunctionInfo _countFunctionInfo;
+
         public Form1()
         {
             InitializeComponent();
+
+            _namedValueInfoArray = new INamedValueInfo[] {
+                new NamedValueInfo<RootNode>("Root")
+            };
+
+            Type jsonpathFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.JsonPathNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
+            _jsonpathFunctionInfo = (IFunctionInfo)jsonpathFunction.GetConstructor(new[]{
+                typeof(string), typeof(int), typeof(int) }
+            ).Invoke(new object[] { "JsonPath", 1, 1 });
+
+            Type countFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.CountNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
+            _countFunctionInfo = (IFunctionInfo)countFunction.GetConstructor(
+                new[] { typeof(string), typeof(int), typeof(int) }
+            ).Invoke(new object[] { "Count", 1, 1 });
         }
 
         private void Evaluate()
@@ -38,43 +56,35 @@ namespace ServerTaskExpressionTester
             try
             {
                 Llog.Text = string.Empty;
-
-                INamedValueInfo[] namedValueInfoArray =
-                {
-                    new NamedValueInfo<RootNode>("Root")
-                };
-
-                Type jsonpathFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.JsonPathNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
-                IFunctionInfo jsonpathFunctionInfo = (IFunctionInfo) jsonpathFunction.GetConstructor(new[]{
-                    typeof(string), typeof(int), typeof(int) }
-                ).Invoke(new object[] { "JsonPath", 1, 1});
-
-                Type countFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.CountNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
-                IFunctionInfo countFunctionInfo = (IFunctionInfo) countFunction.GetConstructor(
-                    new[]{ typeof(string), typeof(int), typeof(int) }
-                ).Invoke(new object[] { "Count", 1, 1 });
-
-
+                
                 IFunctionInfo[] functionInfoArray = {
-                    countFunctionInfo,
-                    jsonpathFunctionInfo
+                    _countFunctionInfo,
+                    _jsonpathFunctionInfo
                 };
 
                 ExpressionParser parser = new ExpressionParser();
                 var tree = parser.CreateTree(
                     expression: text,
                     trace: null,
-                    namedValues: namedValueInfoArray,
+                    namedValues: _namedValueInfoArray,
                     functions: functionInfoArray
                 );
+                bool result = false;
 
-                JToken jtoken = JToken.Parse(response);
-                bool result = tree.EvaluateBoolean(
-                    trace: new TextBoxTraceWriter(Llog), 
-                    secretMasker: null, 
-                    state: jtoken
-                );
-
+                try
+                {
+                    JToken jtoken = JToken.Parse(response);
+                    result = tree.EvaluateBoolean(
+                        trace: new TextBoxTraceWriter(Llog),
+                        secretMasker: null,
+                        state: jtoken
+                    );
+                }
+                catch (Exception e)
+                {
+                    Llog.Text += Environment.NewLine + e.Message;
+                }
+                
                 if (result)
                 {
                     Status.Text = "Success";
