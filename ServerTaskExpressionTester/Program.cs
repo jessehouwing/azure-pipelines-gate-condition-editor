@@ -35,9 +35,10 @@ namespace ServerTaskExpressionTester
                 ["Newtonsoft.Json"] = @"Tools\"
             };
 
-            var tfsPath = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\16.0", "InstallPath", string.Empty);
-
-            if (string.IsNullOrWhiteSpace(tfsPath))
+            var tfsPath16 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\16.0", "InstallPath", string.Empty);
+            var tfsPath17 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\17.0", "InstallPath", string.Empty);
+            
+            if (string.IsNullOrWhiteSpace(tfsPath16 ?? tfsPath17))
             {
                 MessageBox.Show("Please install TFS 2018 update 2 before running this tool.", "Cannot load.",
                     MessageBoxButtons.OK, MessageBoxIcon.Stop);
@@ -49,7 +50,7 @@ namespace ServerTaskExpressionTester
 
                 if (assemblies.Keys.Contains(name.Name))
                 {
-                    return Assembly.LoadFile(System.IO.Path.Combine(tfsPath, assemblies[name.Name], name.Name + ".dll"));
+                    return Assembly.LoadFile(System.IO.Path.Combine(tfsPath16 ?? tfsPath17, assemblies[name.Name], name.Name + ".dll"));
                 }
             }
 
