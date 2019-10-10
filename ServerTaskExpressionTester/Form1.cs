@@ -35,6 +35,10 @@ namespace ServerTaskExpressionTester
             _countFunctionInfo = (IFunctionInfo)countFunction.GetConstructor(
                 new[] { typeof(string), typeof(int), typeof(int) }
             ).Invoke(new object[] { "Count", 1, 1 });
+
+            expressionEditor.MaxLength = int.MaxValue;
+            responseEditor.MaxLength = int.MaxValue;
+            Llog.MaxLength = int.MaxValue;
         }
 
         private void Evaluate()
@@ -56,7 +60,7 @@ namespace ServerTaskExpressionTester
             try
             {
                 Llog.Text = string.Empty;
-                
+
                 IFunctionInfo[] functionInfoArray = {
                     _countFunctionInfo,
                     _jsonpathFunctionInfo
@@ -84,7 +88,7 @@ namespace ServerTaskExpressionTester
                 {
                     Llog.Text += Environment.NewLine + e.Message;
                 }
-                
+
                 if (result)
                 {
                     Status.Text = "Success";
@@ -128,7 +132,7 @@ namespace ServerTaskExpressionTester
                 .Where(row => deleteVariables.Contains(row.Cells[0].Value));
 
             foreach (var row in rowsToDelete)
-            { 
+            {
                 dataGridView1.Rows.Remove(row);
             }
 
@@ -139,7 +143,7 @@ namespace ServerTaskExpressionTester
 
             Evaluate();
         }
-        
+
         private void textBox1_TextChanged(object sender, EventArgs e)
         {
             Evaluate();
@@ -156,7 +160,7 @@ namespace ServerTaskExpressionTester
                     dataGridView1.Rows.Add(variable.Key, variable.Value);
                 }
             }
-            
+
             expressionEditor.Text = Settings1.Default.Expression;
             responseEditor.Text = Settings1.Default.JsonBody;
         }
