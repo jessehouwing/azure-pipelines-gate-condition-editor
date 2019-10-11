@@ -56,6 +56,7 @@ steps:
     fileType: 'vsix'
     vsixFile: '$(vsix)'
     updateTasksVersion: false
+    noWaitValidation: true
 
 - task: PublishPipelineArtifact@1
   inputs:
