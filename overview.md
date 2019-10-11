@@ -6,6 +6,10 @@ Or queued 182 releases to debug the Success Criteria Condition? This little tool
 
 ![Screenshot](screenshot.png)
 
+# Learn more
+
+[I wrote this little utility while debugging a condition for one of my own extension and blogged about the experience](https://jessehouwing.net/vsts-release-create-complex-release-gate/).
+
 # Prerequisites
 
 To run you must have one of the following prerequisites installed:
