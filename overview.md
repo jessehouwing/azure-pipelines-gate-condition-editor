@@ -1,6 +1,12 @@
-Simple UI tool to test expressions for Server and ServerGate success expressions.
+Ever wondered what to put in the Success Criteria field?
 
-![Screenshot](/screenshot.png)
+![What to put here?](what-here.png)
+
+Or queued 182 releases to debug the Success Criteria Condition? This little tool will help you locally evaluate your condition syntax in seconds instead of minutes or hours.
+
+![Screenshot](screenshot.png)
+
+# Prerequisites
 
 To run you must have one of the following prerequisites installed:
 

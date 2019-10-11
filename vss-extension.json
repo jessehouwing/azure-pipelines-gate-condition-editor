@@ -2,6 +2,7 @@
   "manifestVersion": 1,
   "id": "gate-condition-editor",
   "name": "Gate Condition Editor for Azure Pipelines",
+  "description": "Tool to quickly write and test Success Criteria conditions for Release Gates.",
   "version": "0.0.5",
   "public": true,
   "publisher": "jessehouwing",
@@ -14,7 +15,6 @@
       "version": "[16.1,)"
     }
   ],
-  "description": "",
   "categories": [
     "Azure Pipelines"
   ],
@@ -47,7 +47,7 @@
       "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/LICENSE.md"
     },
     "privacypolicy": {
-      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/PRIVACY.md"
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/blob/master/PRIVACY.md"
     }
   },
   "CustomerQnASupport": {
@@ -67,11 +67,6 @@
     "color": "#1E1E1E",
     "theme": "dark"
   },
-  "screenshots": [
-    {
-      "path": "screenshot.png"
-    }
-  ],
   "content": {
     "details": {
       "path": "overview.md"
@@ -86,6 +81,10 @@
   "files": [
     {
       "path": "screenshot.png",
+      "addressable": true
+    },
+    {
+      "path": "what-here.png",
       "addressable": true
     }
   ]
