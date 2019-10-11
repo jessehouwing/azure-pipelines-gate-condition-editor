@@ -46,10 +46,8 @@ steps:
   inputs:
     rootFolder: '$(Build.SourcesDirectory)'
     outputPath: '$(vsix)'
-    extensionTag: '-dev'
     extensionVersion: '$(Build.BuildNumber)'
     updateTasksVersion: false
-    extensionVisibility: 'private'
 
 - task: PublishAzureDevOpsExtension@2
   inputs:
