@@ -7,12 +7,13 @@ trigger:
 - master
 
 pool:
-  vmImage: 'windows-latest'
+  name: 'default'
 
 variables:
   solution: '**/*.sln'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
+  vsix: '$(Build.ArtifactStagingDirectoryDirectory)/vsix/gate-condition-editor-dev-$(Build.BuildNumber).vsix'
 
 steps:
 - task: NuGetToolInstaller@1
@@ -27,3 +28,44 @@ steps:
     platform: '$(buildPlatform)'
     configuration: '$(buildConfiguration)'
 
+- task: CopyFiles@2
+  inputs:
+    SourceFolder: '$(Build.SourcesDirectory)/ServerTaskExpressionTester/bin/$(buildConfiguration)'
+    Contents: |
+      *.pdb
+      *.exe
+    TargetFolder: '$(Build.ArtifactStagingDirectoryDirectory)'
+
+- task: PackageAzureDevOpsExtension@2
+  inputs:
+    rootFolder: '$(Build.SourcesDirectory)'
+    outputPath: '$(vsix)'
+    extensionTag: '-dev'
+    extensionVersion: '$(Build.BuildNumber)'
+    updateTasksVersion: false
+    extensionVisibility: 'private'
+
+- task: PublishAzureDevOpsExtension@2
+  inputs:
+    connectTo: 'VsTeam'
+    fileType: 'vsix'
+    vsixFile: '$(vsix)'
+    updateTasksVersion: false
+
+- task: PublishPipelineArtifact@1
+  inputs:
+    targetPath: '$(Build.ArtifactStagingDirectoryDirectory)'
+    artifact: 'Output'
+
+- task: GitHubRelease@1
+  inputs:
+    gitHubConnection: 'GitHub - jessehouwing'
+    repositoryName: '$(Build.Repository.Name)'
+    action: 'create'
+    target: '$(Build.SourceVersion)'
+    tagSource: 'userSpecifiedTag'
+    tag: '$(Build.BuildNumber)'
+    title: '$(Build.BuildNumber)'
+    releaseNotesSource: 'inline'
+    changeLogCompareToRelease: 'lastFullRelease'
+    changeLogType: 'commitBased'
