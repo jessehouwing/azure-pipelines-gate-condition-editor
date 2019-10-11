@@ -3,7 +3,7 @@
 # Add steps that publish symbols, save build artifacts, and more:
 # https://docs.microsoft.com/azure/devops/pipelines/apps/windows/dot-net
 
-name: 0.1$(Rev:.r)
+name: 1.1$(Rev:.r)
 
 trigger:
 - master
@@ -54,6 +54,7 @@ steps:
 - task: PublishAzureDevOpsExtension@2
   inputs:
     connectTo: 'VsTeam'
+    connectedServiceName: 'Jesse Houwing'
     fileType: 'vsix'
     vsixFile: '$(vsix)'
     updateTasksVersion: false
