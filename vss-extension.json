@@ -2,11 +2,10 @@
   "manifestVersion": 1,
   "id": "gate-condition-editor",
   "name": "Gate Condition Editor for Azure Pipelines",
-  "version": "0.0.3",
-  "public": false,
+  "version": "0.0.5",
+  "public": true,
   "publisher": "jessehouwing",
   "galleryFlags": [
-    "private",
     "preview"
   ],
   "targets": [
@@ -87,10 +86,6 @@
   "files": [
     {
       "path": "screenshot.png",
-      "addressable": true
-    },
-    {
-      "path": "extension-icon.png",
       "addressable": true
     }
   ]
