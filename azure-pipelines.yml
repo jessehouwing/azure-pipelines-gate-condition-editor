@@ -15,7 +15,7 @@ variables:
   solution: '**/*.sln'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
-  vsix: '$(Build.ArtifactStagingDirectoryDirectory)/vsix/gate-condition-editor-dev-$(Build.BuildNumber).vsix'
+  vsix: '$(Build.ArtifactStagingDirectory)/vsix/gate-condition-editor-$(Build.BuildNumber).vsix'
 
 steps:
 - task: NuGetToolInstaller@1
@@ -36,7 +36,7 @@ steps:
     Contents: |
       *.pdb
       *.exe
-    TargetFolder: '$(Build.ArtifactStagingDirectoryDirectory)'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
 
 - task: TfxInstaller@2
   inputs:
@@ -59,7 +59,7 @@ steps:
 
 - task: PublishPipelineArtifact@1
   inputs:
-    targetPath: '$(Build.ArtifactStagingDirectoryDirectory)'
+    targetPath: '$(Build.ArtifactStagingDirectory)'
     artifact: 'Output'
 
 - task: GitHubRelease@1
