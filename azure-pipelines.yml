@@ -3,6 +3,8 @@
 # Add steps that publish symbols, save build artifacts, and more:
 # https://docs.microsoft.com/azure/devops/pipelines/apps/windows/dot-net
 
+name: 0.1$(Rev:.r)
+
 trigger:
 - master
 
@@ -35,6 +37,10 @@ steps:
       *.pdb
       *.exe
     TargetFolder: '$(Build.ArtifactStagingDirectoryDirectory)'
+
+- task: TfxInstaller@2
+  inputs:
+    version: 'v0.7.x'
 
 - task: PackageAzureDevOpsExtension@2
   inputs:
