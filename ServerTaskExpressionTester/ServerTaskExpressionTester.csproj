@@ -13,6 +13,10 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <TargetFrameworkProfile />
   </PropertyGroup>
+  <PropertyGroup>
+    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\17.0@InstallPath)</TfsInstallationDirectory>
+    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\17.0@InstallPath)</TfsInstallationDirectory>
+  </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
@@ -34,24 +38,24 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.TeamFoundation.DistributedTask.Orchestration.Server">
-      <HintPath>..\..\..\..\..\..\Program Files\Microsoft Team Foundation Server 2018\Tools\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.dll</HintPath>
+      <HintPath>$(TfsInstallationDirectory)\Tools\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions">
-      <HintPath>..\..\..\..\..\..\Program Files\Microsoft Team Foundation Server 2018\Tools\Plugins\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.dll</HintPath>
+      <HintPath>$(TfsInstallationDirectory)\Tools\Plugins\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.TeamFoundation.DistributedTask.WebApi">
-      <HintPath>..\..\..\..\..\..\Program Files\Microsoft Team Foundation Server 2018\Application Tier\Message Queue\bin\Microsoft.TeamFoundation.DistributedTask.WebApi.dll</HintPath>
+      <HintPath>$(TfsInstallationDirectory)\Application Tier\Message Queue\bin\Microsoft.TeamFoundation.DistributedTask.WebApi.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.TeamFoundation.Framework.Server">
-      <HintPath>..\..\..\..\..\..\Program Files\Microsoft Team Foundation Server 2018\Tools\Microsoft.TeamFoundation.Framework.Server.dll</HintPath>
+      <HintPath>$(TfsInstallationDirectory)\Tools\Microsoft.TeamFoundation.Framework.Server.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=9.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\..\..\Program Files\Microsoft Team Foundation Server 2018\Tools\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(TfsInstallationDirectory)\Tools\Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System" />
