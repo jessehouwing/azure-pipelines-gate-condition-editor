@@ -1,9 +1,20 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27520.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29403.142
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServerTaskExpressionTester", "ServerTaskExpressionTester\ServerTaskExpressionTester.csproj", "{E4928F2B-8F53-4556-B419-BD33391F1276}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{200B7374-38C2-4D3E-BE9D-19112CB72A7C}"
+	ProjectSection(SolutionItems) = preProject
+		extension-icon.png = extension-icon.png
+		LICENSE.md = LICENSE.md
+		overview.md = overview.md
+		PRIVACY.md = PRIVACY.md
+		README.md = README.md
+		screenshot.png = screenshot.png
+		vss-extension.json = vss-extension.json
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -1,0 +1,86 @@
+{
+  "manifestVersion": 1,
+  "id": "gate-condition-editor",
+  "name": "Gate Condition Editor for Azure Pipelines",
+  "version": "0.0.0",
+  "public": false,
+  "publisher": "jessehouwing",
+  "galleryFlags": [
+    "private", "preview"
+  ],
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services.Integration",
+      "version": "[16.1,)"
+    }
+  ],
+  "description": "",
+  "categories": [
+    "Azure Pipelines"
+  ],
+  "tags": [
+    "Gate",
+    "Release Gate",
+    "Utility",
+    "Xpirit"
+  ],
+  "links": {
+    "home": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor"
+    },
+    "getstarted": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/releases/latest"
+    },
+    "learn": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/README.md"
+    },
+    "support": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/issues"
+    },
+    "repository": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor"
+    },
+    "issues": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/issues"
+    },
+    "license": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/LICENSE.md"
+    },
+    "privacypolicy": {
+      "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/PRIVACY.md"
+    }
+  },
+  "CustomerQnASupport": {
+    "enableqna": "true",
+    "url": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/issues"
+  },
+  "badges": [
+  ],
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor.git"
+  },
+  "icons": {
+    "default": "extension-icon.png"
+  },
+  "branding": {
+    "color": "#1E1E1E",
+    "theme": "dark"
+  },
+  "screenshots": [
+    {
+      "path": "screenshot.png"
+    }
+  ],
+  "content": {
+    "details": {
+      "path": "README.md"
+    },
+    "license": {
+      "path": "LICENSE.md"
+    },
+    "privacy": {
+      "path": "PRIVACY.md"
+    }
+  }
+}
