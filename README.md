@@ -10,13 +10,12 @@ Or queued 182 releases to debug the Success Criteria Condition? This little tool
 
 # Learn more
 
-[I wrote this little utility while debugging a condition for one of my own extension and blogged about the experience](https://jessehouwing.net/vsts-release-create-complex-release-gate/).
+[I wrote this little utility while debugging a condition for one of my own extensions and blogged about the experience](https://jessehouwing.net/vsts-release-create-complex-release-gate/).
 
 # Prerequisites
 
-To run you must have one of the following prerequisites installed:
+To run you must have following prerequisites installed:
 
- * Team Foundation Server 2018 update 1 or later
- * [Azure DevOps Server 2019 or later](https://visualstudio.microsoft.com/downloads/)
+  * [Azure DevOps Server 2019 or later](https://visualstudio.microsoft.com/downloads/)
  
-It is not required to actually configure the server, so no need for SQL Server, IIS or anything. Just run the installer and cancel the configuration wizard.
+It suffices to simpy install Azure DevOps Server on your workstation (Windows 10 x64). You do not need to configue Azure DevOps Server after installation. The installation is used to load the parser and functions. Since the assemblies required cannot be redistributed, this is the easiest way to ensure the utility can load the required dependencies.
