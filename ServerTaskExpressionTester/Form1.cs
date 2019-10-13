@@ -24,8 +24,6 @@ namespace ServerTaskExpressionTester
         {
             InitializeComponent();
 
-            // (INamedValueInfo)new NamedValueInfo<TaskInputsNode>("TaskInputs")
-
             // 2018
             _jsonpathFunctionInfo = InitializeFunctionNode("JsonPath", 1, 1);
             _countFunctionInfo = InitializeFunctionNode("Count", 1, 1);
@@ -43,12 +41,12 @@ namespace ServerTaskExpressionTester
             Llog.MaxLength = int.MaxValue;
         }
 
-        private IFunctionInfo InitializeFunctionNode(string name,int a, int b)
+        private IFunctionInfo InitializeFunctionNode(string name, int minParameters, int maxParameters)
         {
-            Type jsonpathFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest." + name + "Node, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
-            return (IFunctionInfo)jsonpathFunction.GetConstructor(new[]{
+            Type functionType = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest." + name + "Node, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
+            return (IFunctionInfo)functionType.GetConstructor(new[]{
                 typeof(string), typeof(int), typeof(int) }
-            ).Invoke(new object[] { name, a, b });
+            ).Invoke(new object[] { name, minParameters, maxParameters });
         }
 
         private void Evaluate()
@@ -65,6 +63,12 @@ namespace ServerTaskExpressionTester
             {
                 variables.Add((string)row.Cells[0].Value, (string)row.Cells[1].Value);
                 text = text.Replace("$(" + (string) row.Cells[0].Value + ")", (string) row.Cells[1].Value);
+            }
+
+            IDictionary<string, string> taskInputs = new Dictionary<string, string>();
+            foreach (var row in dataGridView2.Rows.Cast<DataGridViewRow>())
+            {
+                taskInputs.Add((string)row.Cells[0].Value, (string)row.Cells[1].Value);
             }
 
             try
@@ -90,6 +94,7 @@ namespace ServerTaskExpressionTester
                         trace: null,
                         namedValues: new INamedValueInfo[] {
                             new DictionaryNode("Variables", variables),
+                            new DictionaryNode("TaskInputs", taskInputs),
                             new ObjectNode("Root", jtoken)
                         },
                         functions: functionInfoArray
@@ -127,17 +132,25 @@ namespace ServerTaskExpressionTester
 
         public IList<string> GetVariables()
         {
-            var matches = Regex.Matches(expressionEditor.Text, @"\$\((?<variablename>[^\)]+)\)|variables\[\'(?<variablename>[^\)]+)'\]|variables\.(?<variablename>[a-zA-Z0-9-_.]+)");
-            List<string> result = new List<string>(matches.Count);
-            foreach (var m in matches.Cast<Match>())
-            {
-                result.Add(m.Groups["variablename"].Value);
-            }
+            var matches = Regex.Matches(expressionEditor.Text, @"\$\((?<variablename>[^\)]+)\)|variables\[\'(?<variablename>[^\]]+)'\]|variables\.(?<variablename>[a-zA-Z0-9_.-]+)", RegexOptions.IgnoreCase);
+            return matches.Cast<Match>().Select(m => m.Groups["variablename"].Value).ToList();
+        }
 
-            return result;
+        public IList<string> GetTaskInputs()
+        {
+            var matches = Regex.Matches(expressionEditor.Text, @"taskinputs\[\'(?<variablename>[^\]]+)'\]|taskinputs\.(?<variablename>[a-zA-Z0-9_.-]+)", RegexOptions.IgnoreCase);
+            return matches.Cast<Match>().Select(m => m.Groups["variablename"].Value).ToList();
         }
 
         private void textBox2_TextChanged(object sender, EventArgs e)
+        {
+            UpdateVariables();
+            UpdateTaskInputs();
+
+            Evaluate();
+        }
+
+        private void UpdateVariables()
         {
             var variables = GetVariables();
             var existingVariables = dataGridView1.Rows.Cast<DataGridViewRow>().Select(row => row.Cells[0].Value).Distinct().ToArray();
@@ -156,8 +169,27 @@ namespace ServerTaskExpressionTester
             {
                 dataGridView1.Rows.Add(variable, "");
             }
+        }
 
-            Evaluate();
+        private void UpdateTaskInputs()
+        {
+            var variables = GetTaskInputs();
+            var existingVariables = dataGridView2.Rows.Cast<DataGridViewRow>().Select(row => row.Cells[0].Value).Distinct().ToArray();
+            var newVariables = variables.Except(existingVariables).Distinct();
+            var deleteVariables = existingVariables.Except(variables).Distinct();
+
+            var rowsToDelete = dataGridView2.Rows.Cast<DataGridViewRow>()
+                .Where(row => deleteVariables.Contains(row.Cells[0].Value));
+
+            foreach (var row in rowsToDelete)
+            {
+                dataGridView2.Rows.Remove(row);
+            }
+
+            foreach (var variable in newVariables)
+            {
+                dataGridView2.Rows.Add(variable, "");
+            }
         }
 
         private void textBox1_TextChanged(object sender, EventArgs e)
@@ -177,6 +209,16 @@ namespace ServerTaskExpressionTester
                 }
             }
 
+            json = Settings1.Default.TaskInputs;
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var variables = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+                foreach (var variable in variables)
+                {
+                    dataGridView2.Rows.Add(variable.Key, variable.Value);
+                }
+            }
+
             expressionEditor.Text = Settings1.Default.Expression;
             responseEditor.Text = Settings1.Default.JsonBody;
         }
@@ -192,7 +234,14 @@ namespace ServerTaskExpressionTester
                 variables.Add((string)row.Cells[0].Value, (string)row.Cells[1].Value);
             }
 
+            var taskInputs = new Dictionary<string, string>();
+            foreach (var row in dataGridView2.Rows.Cast<DataGridViewRow>())
+            {
+                taskInputs.Add((string)row.Cells[0].Value, (string)row.Cells[1].Value);
+            }
+
             Settings1.Default.Variables = JsonConvert.SerializeObject(variables);
+            Settings1.Default.TaskInputs = JsonConvert.SerializeObject(taskInputs);
             Settings1.Default.Save();
         }
 
