@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Microsoft.TeamFoundation.DistributedTask.Expressions;
+using Microsoft.TeamFoundation.DistributedTask.Pipelines.Expressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using ServerTaskExpressionTester.Properties;
@@ -17,12 +18,10 @@ namespace ServerTaskExpressionTester
         {
             InitializeComponent();
 
-            // (IFunctionInfo) new FunctionInfo<LengthNode>(InputValidationConstants.Length, 1, 1),
-            // (IFunctionInfo) new FunctionInfo<IsUrlNode>(InputValidationConstants.IsUrl, 1, 1)
-
             expressionEditor.MaxLength = int.MaxValue;
             responseEditor.MaxLength = int.MaxValue;
             Llog.MaxLength = int.MaxValue;
+            Status.Text = "";
         }
 
         private IFunctionInfo InitializeFunctionNode(string name, int minParameters, int maxParameters)
@@ -57,7 +56,9 @@ namespace ServerTaskExpressionTester
                     InitializeFunctionNode("Count", 1, 1),
                     InitializeFunctionNode("IsNullOrEmpty", 1, 1),
                     InitializeFunctionNode("Split", 2, 2),
-                    InitializeFunctionNode("Intersect", 2, 2)
+                    InitializeFunctionNode("Intersect", 2, 2),
+                    (IFunctionInfo) new FunctionInfo<LengthNode>("length", 1, 1),
+                    (IFunctionInfo) new FunctionInfo<IsUrlNode>("isUrl", 1, 1)
                 };
 
                 bool result = false;
@@ -72,7 +73,8 @@ namespace ServerTaskExpressionTester
                         namedValues: new INamedValueInfo[] {
                             new DictionaryNode("Variables", variables),
                             new DictionaryNode("TaskInputs", GridToDictionary(dataGridView2)),
-                            new ObjectNode("Root", jtoken)
+                            new ObjectNode("Root", jtoken),
+                            new CustomResponseNode("Response", jtoken, textBox1.Text, GridToDictionary(dataGridView3))
                         },
                         functions: functionInfoArray
                     );
@@ -127,7 +129,7 @@ namespace ServerTaskExpressionTester
             Evaluate();
         }
 
-        private void UpdateGrid(DataGridView grid, IList<string> variables)
+        private void UpdateGrid(DataGridView grid, IEnumerable<string> variables)
         {
             var existingVariables = grid.Rows.Cast<DataGridViewRow>().Select(row => row.Cells[0].Value).Distinct().ToArray();
             var newVariables = variables.Except(existingVariables).Distinct();
@@ -174,6 +176,17 @@ namespace ServerTaskExpressionTester
                 }
             }
 
+            json = Settings1.Default.Headers;
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var variables = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+                foreach (var variable in variables)
+                {
+                    dataGridView3.Rows.Add(variable.Key, variable.Value);
+                }
+            }
+
+            textBox1.Text = Settings1.Default.StatusCode ?? string.Empty;
             expressionEditor.Text = Settings1.Default.Expression;
             responseEditor.Text = Settings1.Default.JsonBody;
         }
@@ -185,15 +198,23 @@ namespace ServerTaskExpressionTester
 
             Settings1.Default.Variables = JsonConvert.SerializeObject(GridToDictionary(dataGridView1));
             Settings1.Default.TaskInputs = JsonConvert.SerializeObject(GridToDictionary(dataGridView2));
+            Settings1.Default.StatusCode = textBox1.Text;
+            Settings1.Default.Headers = JsonConvert.SerializeObject(GridToDictionary(dataGridView3));
             Settings1.Default.Save();
         }
 
         private Dictionary<string, string> GridToDictionary(DataGridView grid)
         {
-            var taskInputs = new Dictionary<string, string>();
+            var taskInputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in grid.Rows.Cast<DataGridViewRow>())
             {
-                taskInputs.Add((string)row.Cells[0].Value, (string)row.Cells[1].Value);
+                string key = (string)row.Cells[0].Value;
+                string value = (string)row.Cells[1].Value;
+
+                if (!string.IsNullOrEmpty(key))
+                {
+                    taskInputs.Add(key, value);
+                }
             }
 
             return taskInputs;
@@ -208,6 +229,11 @@ namespace ServerTaskExpressionTester
         }
 
         private void dataGridView1_CellValueChanged(object sender, DataGridViewCellEventArgs e)
+        {
+            Evaluate();
+        }
+
+        private void textBox1_TextChanged_1(object sender, EventArgs e)
         {
             Evaluate();
         }

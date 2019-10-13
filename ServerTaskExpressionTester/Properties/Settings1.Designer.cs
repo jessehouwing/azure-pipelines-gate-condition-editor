@@ -70,5 +70,29 @@ namespace ServerTaskExpressionTester.Properties {
                 this["TaskInputs"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string StatusCode {
+            get {
+                return ((string)(this["StatusCode"]));
+            }
+            set {
+                this["StatusCode"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string Headers {
+            get {
+                return ((string)(this["Headers"]));
+            }
+            set {
+                this["Headers"] = value;
+            }
+        }
     }
 }
