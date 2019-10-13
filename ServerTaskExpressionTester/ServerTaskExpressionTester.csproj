@@ -84,7 +84,9 @@
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
       <DependentUpon>Settings1.settings</DependentUpon>
     </Compile>
+    <Compile Include="ObjecNode.cs" />
     <Compile Include="TextBoxTraceWriter.cs" />
+    <Compile Include="DictionaryNode.cs" />
     <EmbeddedResource Include="Form1.resx">
       <DependentUpon>Form1.cs</DependentUpon>
     </EmbeddedResource>

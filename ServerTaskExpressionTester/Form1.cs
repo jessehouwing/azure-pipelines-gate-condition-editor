@@ -14,31 +14,41 @@ namespace ServerTaskExpressionTester
 {
     public partial class Form1 : Form
     {
-        private INamedValueInfo[] _namedValueInfoArray;
         private IFunctionInfo _jsonpathFunctionInfo;
         private IFunctionInfo _countFunctionInfo;
+        private IFunctionInfo _isNullOrEmptyFunctionInfo;
+        private IFunctionInfo _splitFunctionInfo;
+        private IFunctionInfo _intersectFunctionInfo;
 
         public Form1()
         {
             InitializeComponent();
 
-            _namedValueInfoArray = new INamedValueInfo[] {
-                new NamedValueInfo<RootNode>("Root")
-            };
+            // (INamedValueInfo)new NamedValueInfo<TaskInputsNode>("TaskInputs")
 
-            Type jsonpathFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.JsonPathNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
-            _jsonpathFunctionInfo = (IFunctionInfo)jsonpathFunction.GetConstructor(new[]{
-                typeof(string), typeof(int), typeof(int) }
-            ).Invoke(new object[] { "JsonPath", 1, 1 });
+            // 2018
+            _jsonpathFunctionInfo = InitializeFunctionNode("JsonPath", 1, 1);
+            _countFunctionInfo = InitializeFunctionNode("Count", 1, 1);
 
-            Type countFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest.CountNode, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
-            _countFunctionInfo = (IFunctionInfo)countFunction.GetConstructor(
-                new[] { typeof(string), typeof(int), typeof(int) }
-            ).Invoke(new object[] { "Count", 1, 1 });
+            // 2019
+            _isNullOrEmptyFunctionInfo = InitializeFunctionNode("IsNullOrEmpty", 1, 1);
+            _splitFunctionInfo = InitializeFunctionNode("Split", 2, 2);
+            _intersectFunctionInfo = InitializeFunctionNode("Intersect", 2, 2);
+
+            // (IFunctionInfo) new FunctionInfo<LengthNode>(InputValidationConstants.Length, 1, 1),
+            // (IFunctionInfo) new FunctionInfo<IsUrlNode>(InputValidationConstants.IsUrl, 1, 1)
 
             expressionEditor.MaxLength = int.MaxValue;
             responseEditor.MaxLength = int.MaxValue;
             Llog.MaxLength = int.MaxValue;
+        }
+
+        private IFunctionInfo InitializeFunctionNode(string name,int a, int b)
+        {
+            Type jsonpathFunction = Type.GetType("Microsoft.TeamFoundation.DistributedTask.Expressions.FunctionInfo`1[[Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.ServerExecutionTasks.HttpRequest." + name + "Node, Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions]], Microsoft.TeamFoundation.DistributedTask.WebApi");
+            return (IFunctionInfo)jsonpathFunction.GetConstructor(new[]{
+                typeof(string), typeof(int), typeof(int) }
+            ).Invoke(new object[] { name, a, b });
         }
 
         private void Evaluate()
@@ -50,11 +60,11 @@ namespace ServerTaskExpressionTester
                 return;
             }
 
+            IDictionary<string, string> variables = new Dictionary<string, string>();
             foreach (var row in dataGridView1.Rows.Cast<DataGridViewRow>())
             {
+                variables.Add((string)row.Cells[0].Value, (string)row.Cells[1].Value);
                 text = text.Replace("$(" + (string) row.Cells[0].Value + ")", (string) row.Cells[1].Value);
-                //text = text.Replace("variables['" + (string) row.Cells[0].Value + "']", (string)row.Cells[1].Value);
-                //text = text.Replace("variables." + (string) row.Cells[0].Value, (string)row.Cells[1].Value);
             }
 
             try
@@ -63,21 +73,28 @@ namespace ServerTaskExpressionTester
 
                 IFunctionInfo[] functionInfoArray = {
                     _countFunctionInfo,
-                    _jsonpathFunctionInfo
+                    _jsonpathFunctionInfo,
+                    _isNullOrEmptyFunctionInfo,
+                    _splitFunctionInfo,
+                    _intersectFunctionInfo
                 };
 
-                ExpressionParser parser = new ExpressionParser();
-                var tree = parser.CreateTree(
-                    expression: text,
-                    trace: null,
-                    namedValues: _namedValueInfoArray,
-                    functions: functionInfoArray
-                );
                 bool result = false;
-
                 try
                 {
                     JToken jtoken = JToken.Parse(response);
+
+                    ExpressionParser parser = new ExpressionParser();
+                    var tree = parser.CreateTree(
+                        expression: text,
+                        trace: null,
+                        namedValues: new INamedValueInfo[] {
+                            new DictionaryNode("Variables", variables),
+                            new ObjectNode("Root", jtoken)
+                        },
+                        functions: functionInfoArray
+                    );
+
                     result = tree.EvaluateBoolean(
                         trace: new TextBoxTraceWriter(Llog),
                         secretMasker: null,
@@ -110,8 +127,7 @@ namespace ServerTaskExpressionTester
 
         public IList<string> GetVariables()
         {
-            var matches = Regex.Matches(expressionEditor.Text, @"\$\((?<variablename>[^\)]+)\)");
-            //var matches = Regex.Matches(expressionEditor.Text, @"\$\((?<variablename>[^\)]+)\)|variables\[\'(?<variablename>[^\)]+)'\]|variables\.(?<variablename>[a-zA-Z0-9-_.]+)");
+            var matches = Regex.Matches(expressionEditor.Text, @"\$\((?<variablename>[^\)]+)\)|variables\[\'(?<variablename>[^\)]+)'\]|variables\.(?<variablename>[a-zA-Z0-9-_.]+)");
             List<string> result = new List<string>(matches.Count);
             foreach (var m in matches.Cast<Match>())
             {
