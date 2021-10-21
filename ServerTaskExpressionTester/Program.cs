@@ -45,7 +45,7 @@ namespace ServerTaskExpressionTester
 
 #if DEBUG
             string path = localpath;
-            string assemblyPath = Path.Combine(localpath, name.Name + ".dll");
+            string assemblyPath = Path.Combine(localpath, "2020", name.Name + ".dll");
 #else
             string path = tfsPath;
             string assemblyPath = Path.Combine(tfsPath, assemblies[name.Name], name.Name + ".dll");
@@ -61,8 +61,16 @@ namespace ServerTaskExpressionTester
             {
                 if (assemblies.Keys.Contains(name.Name))
                 {
-                    var ass =  Assembly.LoadFrom(localpath);
-                    return ass;
+                    try
+                    {
+                        var ass = Assembly.LoadFrom(assemblyPath);
+                        return ass;
+                    }
+                    catch (Exception e)
+                    {
+                        Console.Error.WriteLine(e.Message);
+                        return null;
+                    }
                 }
             }
 

@@ -4,7 +4,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-	<AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <ProjectGuid>{E4928F2B-8F53-4556-B419-BD33391F1276}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <RootNamespace>ServerTaskExpressionTester</RootNamespace>
@@ -43,22 +43,22 @@
     <Reference Include="Microsoft.TeamFoundation.DistributedTask.Orchestration.Server, Version=17.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>$(TfsInstallationDirectory)\Tools\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.dll</HintPath>
       <SpecificVersion>False</SpecificVersion>
-      <Private>True</Private>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions, Version=17.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>$(TfsInstallationDirectory)\Tools\Plugins\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.dll</HintPath>
       <SpecificVersion>False</SpecificVersion>
-      <Private>True</Private>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.TeamFoundation.DistributedTask.WebApi, Version=17.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>$(TfsInstallationDirectory)\Application Tier\Message Queue\bin\Microsoft.TeamFoundation.DistributedTask.WebApi.dll</HintPath>
       <SpecificVersion>False</SpecificVersion>
-      <Private>True</Private>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.TeamFoundation.Framework.Server, Version=17.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>$(TfsInstallationDirectory)\Tools\Microsoft.TeamFoundation.Framework.Server.dll</HintPath>
       <SpecificVersion>False</SpecificVersion>
-      <Private>True</Private>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=10.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>$(TfsInstallationDirectory)\Tools\Newtonsoft.Json.dll</HintPath>
