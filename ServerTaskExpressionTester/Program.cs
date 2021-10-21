@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -10,6 +11,11 @@ namespace ServerTaskExpressionTester
 {
     static class Program
     {
+        static string tfsPath17 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\17.0", "InstallPath", string.Empty);
+        static string tfsPath18 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\18.0", "InstallPath", string.Empty);
+        static string localpath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+        static string tfsPath = tfsPath17 ?? tfsPath18;
+
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
@@ -35,21 +41,28 @@ namespace ServerTaskExpressionTester
                 ["Newtonsoft.Json"] = @"Tools\"
             };
 
-            var tfsPath17 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\17.0", "InstallPath", string.Empty);
+            AssemblyName name = new AssemblyName(args.Name);
 
-            if (string.IsNullOrWhiteSpace(tfsPath17))
+#if DEBUG
+            string path = localpath;
+            string assemblyPath = Path.Combine(localpath, name.Name + ".dll");
+#else
+            string path = tfsPath;
+            string assemblyPath = Path.Combine(tfsPath, assemblies[name.Name], name.Name + ".dll");
+#endif
+
+            if (string.IsNullOrWhiteSpace(path))
             {
-                MessageBox.Show("Please install Azure DevOps Server 2019 before running this tool.", "Cannot load.",
+                MessageBox.Show("Please install Azure DevOps Server 2019 or later before running this tool.", "Cannot load.",
                     MessageBoxButtons.OK, MessageBoxIcon.Stop);
                 Application.Exit();
             }
             else
             {
-                AssemblyName name = new AssemblyName(args.Name);
-
                 if (assemblies.Keys.Contains(name.Name))
                 {
-                    return Assembly.LoadFile(System.IO.Path.Combine(tfsPath17, assemblies[name.Name], name.Name + ".dll"));
+                    var ass =  Assembly.LoadFrom(localpath);
+                    return ass;
                 }
             }
 
