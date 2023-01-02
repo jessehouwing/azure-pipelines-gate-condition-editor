@@ -38,18 +38,18 @@ steps:
     versionSpec: '10.x'
     checkLatest: true
     
-- task: TfxInstaller@2
+- task: TfxInstaller@4
   inputs:
-    version: 'v0.9.x'
+    version: 'v0.x'
 
-- task: PackageAzureDevOpsExtension@2
+- task: PackageAzureDevOpsExtension@4
   inputs:
     rootFolder: '$(Build.SourcesDirectory)'
     outputPath: '$(vsix)'
     extensionVersion: '$(Build.BuildNumber)'
     updateTasksVersion: false
 
-- task: PublishAzureDevOpsExtension@2
+- task: PublishAzureDevOpsExtension@4
   inputs:
     connectTo: 'VsTeam'
     connectedServiceName: 'Jesse Houwing'
