@@ -33,7 +33,7 @@ steps:
       *.exe
     TargetFolder: '$(Build.ArtifactStagingDirectory)'
 
-- task: NodeTool@0
+- task: NodeTool@0.213.0
   inputs:
     versionSpec: '10.x'
     checkLatest: true
