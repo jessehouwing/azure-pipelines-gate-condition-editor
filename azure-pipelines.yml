@@ -13,7 +13,7 @@ variables:
   vsix: '$(Build.ArtifactStagingDirectory)/vsix/gate-condition-editor-$(Build.BuildNumber).vsix'
 
 steps:
-- task: NuGetToolInstaller@1
+- task: NuGetToolInstaller@1.215.0
 
 - task: NuGetCommand@2
   inputs:
