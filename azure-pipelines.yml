@@ -38,7 +38,7 @@ steps:
     versionSpec: '10.x'
     checkLatest: true
     
-- task: TfxInstaller@4
+- task: TfxInstaller@4.0.50
   inputs:
     version: 'v0.x'
 
