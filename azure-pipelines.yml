@@ -49,7 +49,7 @@ steps:
     extensionVersion: '$(Build.BuildNumber)'
     updateTasksVersion: false
 
-- task: PublishAzureDevOpsExtension@4
+- task: PublishAzureDevOpsExtension@4.0.50
   inputs:
     connectTo: 'VsTeam'
     connectedServiceName: 'Jesse Houwing'
