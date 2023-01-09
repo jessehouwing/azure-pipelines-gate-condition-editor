@@ -42,7 +42,7 @@ steps:
   inputs:
     version: 'v0.x'
 
-- task: PackageAzureDevOpsExtension@4
+- task: PackageAzureDevOpsExtension@4.0.50
   inputs:
     rootFolder: '$(Build.SourcesDirectory)'
     outputPath: '$(vsix)'
