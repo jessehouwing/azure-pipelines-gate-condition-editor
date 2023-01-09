@@ -63,7 +63,7 @@ steps:
     targetPath: '$(Build.ArtifactStagingDirectory)'
     artifact: 'Output'
 
-- task: GitHubRelease@1
+- task: GitHubRelease@1.211.1
   inputs:
     gitHubConnection: 'GitHub - jessehouwing'
     repositoryName: '$(Build.Repository.Name)'
