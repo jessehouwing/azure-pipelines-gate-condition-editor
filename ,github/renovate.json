@@ -5,5 +5,19 @@
   ],
   "azure-pipelines": {
     "enabled": true
-  }
+  },
+  "packageRules": [
+    {
+      "packageNames": [
+        "azure-pipelines-task-lib",
+        "@types/node"
+      ],
+      "updateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "matchDatasources": ["azure-pipelines-tasks"],
+      "extractVersion": "^(?<version>\\d+)"
+    }
+  ]
 }
