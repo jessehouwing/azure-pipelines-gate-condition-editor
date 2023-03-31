@@ -18,4 +18,4 @@ To run you must have following prerequisites installed:
 
   * [Azure DevOps Server 2019 or later](https://visualstudio.microsoft.com/downloads/)
  
-It suffices to simpy install Azure DevOps Server on your workstation (Windows 10 x64). You do not need to configue Azure DevOps Server after installation. The installation is used to load the parser and functions. Since the assemblies required cannot be redistributed, this is the easiest way to ensure the utility can load the required dependencies.
+It suffices to simpy install Azure DevOps Server on your workstation (Windows 10 x64). You do not need to configure Azure DevOps Server after installation, you won't need IIS to be enabled or SQL Server to be installed either. The installation is used to load the parser and functions. Since the assemblies required cannot be redistributed, this is the easiest way to ensure the utility can load the required dependencies.
