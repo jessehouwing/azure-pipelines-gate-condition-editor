@@ -9,7 +9,7 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>ServerTaskExpressionTester</RootNamespace>
     <AssemblyName>ServerTaskExpressionTester</AssemblyName>
-    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <TargetFrameworkProfile />
@@ -19,6 +19,8 @@
     <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\17.0@InstallPath)</TfsInstallationDirectory>
     <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\18.0@InstallPath)</TfsInstallationDirectory>
     <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\18.0@InstallPath)</TfsInstallationDirectory>
+    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\19.0@InstallPath)</TfsInstallationDirectory>
+    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\19.0@InstallPath)</TfsInstallationDirectory>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>

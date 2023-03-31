@@ -13,8 +13,9 @@ namespace ServerTaskExpressionTester
     {
         static string tfsPath17 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\17.0", "InstallPath", string.Empty);
         static string tfsPath18 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\18.0", "InstallPath", string.Empty);
+        static string tfsPath19 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\19.0", "InstallPath", string.Empty);
         static string localpath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
-        static string tfsPath = tfsPath17 ?? tfsPath18;
+        static string tfsPath = tfsPath17 ?? tfsPath18 ?? tfsPath19;
 
         /// <summary>
         /// The main entry point for the application.
