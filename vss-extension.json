@@ -55,6 +55,11 @@
     "url": "https://github.com/jessehouwing/azure-pipelines-gate-condition-editor/issues"
   },
   "badges": [
+    {
+      "href": "https://github.com/sponsors/jessehouwing",
+      "uri": "https://img.shields.io/github/sponsors/jessehouwing",
+      "description": "GitHub Sponsors"
+    }
   ],
   "repository": {
     "type": "git",
