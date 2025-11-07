@@ -21,6 +21,8 @@
     <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\18.0@InstallPath)</TfsInstallationDirectory>
     <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\19.0@InstallPath)</TfsInstallationDirectory>
     <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\19.0@InstallPath)</TfsInstallationDirectory>
+    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\20.0@InstallPath)</TfsInstallationDirectory>
+    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\20.0@InstallPath)</TfsInstallationDirectory>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
