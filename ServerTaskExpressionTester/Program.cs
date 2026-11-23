@@ -1,9 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -11,71 +9,116 @@ namespace ServerTaskExpressionTester
 {
     static class Program
     {
-        static string tfsPath17 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\17.0", "InstallPath", string.Empty);
-        static string tfsPath18 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\18.0", "InstallPath", string.Empty);
-        static string tfsPath19 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\19.0", "InstallPath", string.Empty);
-        static string tfsPath20 = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\TeamFoundationServer\20.0", "InstallPath", string.Empty);
-        static string localpath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
-        static string tfsPath = tfsPath17 ?? tfsPath18 ?? tfsPath19 ?? tfsPath20;
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
+        private static readonly string[] ServerVersions = { "20.0", "19.0", "18.0", "17.0" };
+        private static string serverPath;
+
         [STAThread]
         static void Main()
         {
-            AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
+            try
+            {
+                serverPath = FindServerInstallation();
+                if (serverPath == null)
+                {
+                    throw new InvalidOperationException(
+                        "Azure DevOps Server 2019, 2020, 2022 or 2025 must be installed with its Tools assemblies.");
+                }
+
+                AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                RunApplication();
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(exception.ToString(), "Cannot start Gate Condition Editor",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void RunApplication()
+        {
             Application.Run(new Form1());
         }
 
-        private static System.Reflection.Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
+        private static string FindServerInstallation()
         {
-            Dictionary<string, string> assemblies = new Dictionary<string, string>
+            foreach (string version in ServerVersions)
             {
-                ["Microsoft.TeamFoundation.DistributedTask.Orchestration.Server"] = @"Tools\",
-                ["Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions"] = @"Tools\Plugins",
-                ["Microsoft.TeamFoundation.DistributedTask.WebApi"] = @"Tools\",
-                ["Microsoft.VisualStudio.Services.Common"] = @"Tools\",
-                ["Microsoft.VisualStudio.Services.WebApi"] = @"Tools\",
-                ["Microsoft.TeamFoundation.Framework.Server"] = @"Tools\",
-                ["Newtonsoft.Json"] = @"Tools\"
-            };
-
-            AssemblyName name = new AssemblyName(args.Name);
-
-#if DEBUG
-            string path = localpath;
-            string assemblyPath = Path.Combine(localpath, "2020", name.Name + ".dll");
-#else
-            string path = tfsPath;
-            string assemblyPath = Path.Combine(tfsPath, assemblies[name.Name], name.Name + ".dll");
-#endif
-
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                MessageBox.Show("Please install Azure DevOps Server 2019 or later before running this tool.", "Cannot load.",
-                    MessageBoxButtons.OK, MessageBoxIcon.Stop);
-                Application.Exit();
-            }
-            else
-            {
-                if (assemblies.Keys.Contains(name.Name))
+                foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
                 {
-                    try
+                    using (RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                    using (RegistryKey key = machine.OpenSubKey(@"SOFTWARE\Microsoft\TeamFoundationServer\" + version))
                     {
-                        var ass = Assembly.LoadFrom(assemblyPath);
-                        return ass;
-                    }
-                    catch (Exception e)
-                    {
-                        Console.Error.WriteLine(e.Message);
-                        return null;
+                        string path = key == null ? null : key.GetValue("InstallPath") as string;
+                        if (!string.IsNullOrWhiteSpace(path) &&
+                            File.Exists(Path.Combine(path, @"Tools\Microsoft.TeamFoundation.DistributedTask.WebApi.dll")) &&
+                            File.Exists(Path.Combine(path, @"Tools\Plugins\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.dll")))
+                        {
+                            return path;
+                        }
                     }
                 }
             }
 
             return null;
+        }
+
+        private static Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
+        {
+            var requested = new AssemblyName(args.Name);
+            if (string.IsNullOrEmpty(requested.Name) ||
+                requested.Name != Path.GetFileName(requested.Name) ||
+                (!string.IsNullOrEmpty(requested.CultureName) &&
+                 !string.Equals(requested.CultureName, "neutral", StringComparison.OrdinalIgnoreCase)))
+            {
+                return null;
+            }
+
+            string[] directories = requested.Name == "Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions"
+                ? new[] { @"Tools\Plugins", "Tools", @"Application Tier\Message Queue\bin" }
+                : new[] { "Tools", @"Tools\Plugins", @"Application Tier\Message Queue\bin" };
+
+            foreach (string directory in directories)
+            {
+                string path = Path.Combine(serverPath, directory, requested.Name + ".dll");
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
+                AssemblyName candidate = AssemblyName.GetAssemblyName(path);
+                byte[] requestedToken = requested.GetPublicKeyToken();
+                if (!string.Equals(candidate.Name, requested.Name, StringComparison.OrdinalIgnoreCase) ||
+                    (requestedToken != null && requestedToken.Length != 0 &&
+                     !TokensEqual(candidate.GetPublicKeyToken(), requestedToken)))
+                {
+                    continue;
+                }
+
+                return Assembly.LoadFrom(path);
+            }
+
+            return null;
+        }
+
+        private static bool TokensEqual(byte[] left, byte[] right)
+        {
+            if (left == null || right == null || left.Length != right.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < left.Length; i++)
+            {
+                if (left[i] != right[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

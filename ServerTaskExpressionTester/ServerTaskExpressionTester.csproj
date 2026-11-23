@@ -4,26 +4,16 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <ProjectGuid>{E4928F2B-8F53-4556-B419-BD33391F1276}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <RootNamespace>ServerTaskExpressionTester</RootNamespace>
     <AssemblyName>ServerTaskExpressionTester</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <TargetFrameworkProfile />
   </PropertyGroup>
-  <PropertyGroup>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\17.0@InstallPath)</TfsInstallationDirectory>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\17.0@InstallPath)</TfsInstallationDirectory>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\18.0@InstallPath)</TfsInstallationDirectory>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\18.0@InstallPath)</TfsInstallationDirectory>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\19.0@InstallPath)</TfsInstallationDirectory>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\19.0@InstallPath)</TfsInstallationDirectory>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Microsoft\TeamFoundationServer\20.0@InstallPath)</TfsInstallationDirectory>
-    <TfsInstallationDirectory Condition="'$(TfsInstallationDirectory)'=='' and '$(MSBuildRuntimeType)' != 'Core'">$(Registry:HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\TeamFoundationServer\20.0@InstallPath)</TfsInstallationDirectory>
-  </PropertyGroup>
+  <Import Project="ServerInstallation.targets" />
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
@@ -55,7 +45,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.TeamFoundation.DistributedTask.WebApi, Version=17.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <HintPath>$(TfsInstallationDirectory)\Application Tier\Message Queue\bin\Microsoft.TeamFoundation.DistributedTask.WebApi.dll</HintPath>
+      <HintPath>$(TfsInstallationDirectory)\Tools\Microsoft.TeamFoundation.DistributedTask.WebApi.dll</HintPath>
       <SpecificVersion>False</SpecificVersion>
       <Private>False</Private>
     </Reference>
@@ -67,7 +57,7 @@
     <Reference Include="Newtonsoft.Json, Version=10.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>$(TfsInstallationDirectory)\Tools\Newtonsoft.Json.dll</HintPath>
       <SpecificVersion>False</SpecificVersion>
-      <Private>True</Private>
+      <Private>False</Private>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
