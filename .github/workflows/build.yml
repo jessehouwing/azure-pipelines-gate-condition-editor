@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build:
     name: Build with Azure DevOps Server Express
-    runs-on: windows-2025
+    runs-on: windows-2025-vs2026
     timeout-minutes: 60
 
     steps:
@@ -27,6 +27,8 @@ jobs:
 
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v3.0.0
+        with:
+          vs-version: '[18.0,19.0)'
 
       - name: Install Azure DevOps Server Express (without configuration)
         shell: pwsh

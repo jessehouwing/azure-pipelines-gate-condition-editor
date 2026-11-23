@@ -40,8 +40,9 @@ powershell -NoProfile -STA -File tests\ServerSmokeTest.ps1 -Executable ServerTas
 
 ### GitHub Actions build
 
-The `Build gate condition editor` workflow runs on a fresh Windows Server 2025
-hosted runner for pushes, pull requests and manual runs. It downloads the pinned
+The `Build gate condition editor` workflow runs on a fresh `windows-2025-vs2026`
+hosted runner with Visual Studio 2026 MSBuild 18.x for pushes, pull requests and
+manual runs. It downloads the pinned
 Azure DevOps Server Express 20.0.37104.1 installer, checks its SHA-256 and Microsoft
 Authenticode signature, and installs the binaries with `/Silent /NoRestart`.
 It does not run the configuration wizard or `TfsConfig`, provision a server,
