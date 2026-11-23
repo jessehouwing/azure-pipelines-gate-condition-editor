@@ -3,6 +3,10 @@
 # Docs: https://gh.io/actions-lockfile
 version: 'v0.0.3'
 workflows:
+    '.github/workflows/build.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/upload-artifact@v7.0.2'
+        - 'microsoft/setup-msbuild@v3.0.0'
     '.github/workflows/zizmor.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-python@v7.1.0'
@@ -19,11 +23,21 @@ dependencies:
         commit: 'sha1-6d4fd22b20465ccc0f7354476588e8df7c9ca0e0'
         owner_id: 44036562
         repo_id: 192625525
+    'actions/upload-artifact@v7.0.2':
+        ref: 'v7.0.2'
+        commit: 'sha1-cf430e030ddbb5b0abf93d22962f4752f3646cd9'
+        owner_id: 44036562
+        repo_id: 192625955
     'github/codeql-action@v4.39.4':
         ref: 'v4.39.4'
         commit: 'sha1-1bd86f2fdb4b86187fa4059f16f31a3202acc9ea'
         owner_id: 9919
         repo_id: 259445878
+    'microsoft/setup-msbuild@v3.0.0':
+        ref: 'v3.0.0'
+        commit: 'sha1-30375c66a4eea26614e0d39710365f22f8b0af57'
+        owner_id: 6154722
+        repo_id: 237360465
     'step-security/harden-runner@v2.23.0':
         ref: 'v2.23.0'
         commit: 'sha1-aebdcf6156ab6691adf63218240e476564a1ed4c'
