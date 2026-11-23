@@ -1,3 +1,3 @@
 # Python tooling used by CI. Keep in sync with Dependabot's pip ecosystem updates.
 pre-commit==4.7.0
-zizmor==1.32.0
+zizmor==1.33.1
