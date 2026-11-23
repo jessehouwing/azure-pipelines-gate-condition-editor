@@ -1,0 +1,72 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string] $Executable
+)
+
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+$assembly = [Reflection.Assembly]::LoadFrom((Resolve-Path $Executable).Path)
+$program = $assembly.GetType('ServerTaskExpressionTester.Program', $true)
+$flags = [Reflection.BindingFlags]'Static,NonPublic'
+$serverPath = $program.GetMethod('FindServerInstallation', $flags).Invoke($null, @())
+if (-not $serverPath) {
+    throw 'No supported Azure DevOps Server installation was found.'
+}
+$program.GetField('serverPath', $flags).SetValue($null, $serverPath)
+$resolver = [Delegate]::CreateDelegate([ResolveEventHandler], $program.GetMethod('CurrentDomain_AssemblyResolve', $flags))
+[AppDomain]::CurrentDomain.add_AssemblyResolve($resolver)
+
+try {
+    $wrongToken = 'Microsoft.TeamFoundation.DistributedTask.WebApi, Version=20.0.0.0, Culture=neutral, PublicKeyToken=0011223344556677'
+    if ($resolver.Invoke($null, [ResolveEventArgs]::new($wrongToken))) {
+        throw 'An assembly with a different public key token was accepted.'
+    }
+
+    $form = [Activator]::CreateInstance($assembly.GetType('ServerTaskExpressionTester.Form1', $true))
+    $formType = $form.GetType()
+    $instanceFlags = [Reflection.BindingFlags]'Instance,NonPublic'
+    $response = $formType.GetField('responseEditor', $instanceFlags).GetValue($form)
+    $expression = $formType.GetField('expressionEditor', $instanceFlags).GetValue($form)
+    $status = $formType.GetField('Status', $instanceFlags).GetValue($form)
+    $log = $formType.GetField('Llog', $instanceFlags).GetValue($form)
+    $response.Text = '{"name":"example"}'
+
+    foreach ($case in @(
+        @{ Expression = "eq(length('abc'), 3)"; Expected = 'Success' },
+        @{ Expression = "eq(length('abc'), 2)"; Expected = 'Failed' },
+        @{ Expression = "eq(count(jsonpath('$.name')), 1)"; Expected = 'Success' },
+        @{ Expression = "eq(count(split('a,b', ',')), 2)"; Expected = 'Success' },
+        @{ Expression = "isNullOrEmpty('')"; Expected = 'Success' }
+    )) {
+        $expression.Text = $case.Expression
+        $formType.GetMethod('Evaluate', $instanceFlags).Invoke($form, @())
+        if ($status.Text -ne $case.Expected) {
+            throw "Expression '$($case.Expression)': expected $($case.Expected), got $($status.Text). $($log.Text)"
+        }
+    }
+
+    $plugin = [AppDomain]::CurrentDomain.GetAssemblies() |
+        Where-Object { $_.GetName().Name -eq 'Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions' }
+    if (-not $plugin -or $plugin.Location -ne (Join-Path $serverPath 'Tools\Plugins\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.dll')) {
+        throw 'The server extensions assembly was not loaded from the selected installation.'
+    }
+    $authPath = Join-Path $serverPath 'Tools\Microsoft.Identity.Client.dll'
+    if (Test-Path $authPath) {
+        $authName = [Reflection.AssemblyName]::GetAssemblyName($authPath)
+        $olderAuthName = [Reflection.AssemblyName]::new($authName.FullName)
+        $olderAuthName.Version = [Version]'1.0.0.0'
+        $resolvedAuth = $resolver.Invoke($null, [ResolveEventArgs]::new($olderAuthName.FullName))
+        if (-not $resolvedAuth -or $resolvedAuth.Location -ne $authPath) {
+            throw 'The authentication assembly was not resolved from the selected installation.'
+        }
+        $authAssembly = [Reflection.Assembly]::Load($authName)
+        if ($authAssembly.Location -ne $authPath) {
+            throw 'The authentication assembly was not loaded from the selected installation.'
+        }
+    }
+    Write-Output "Server expression smoke tests passed: $serverPath"
+}
+finally {
+    if ($form) { $form.Dispose() }
+    [AppDomain]::CurrentDomain.remove_AssemblyResolve($resolver)
+}
