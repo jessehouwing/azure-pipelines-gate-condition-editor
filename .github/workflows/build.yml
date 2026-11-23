@@ -1,0 +1,114 @@
+name: Build gate condition editor
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build with Azure DevOps Server Express
+    runs-on: windows-2025
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v3.0.0
+
+      - name: Install Azure DevOps Server Express (without configuration)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $installer = Join-Path $env:RUNNER_TEMP 'azuredevopsexpress.exe'
+          # Stable Express download linked by Microsoft's Server downloads page (LinkId=2330454).
+          $url = 'https://download.visualstudio.microsoft.com/download/pr/1758aa41-92a1-437b-a953-34cbeaeadc90/beaac87770215af59bb2f7f23fc09564/azuredevopsexpress.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          $expectedHash = '5ED741F3A96C4677C431550FE345302E9D98831C0E405EA7735D5377E9C034FA'
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $expectedHash) {
+            throw 'Azure DevOps Server Express installer SHA-256 mismatch.'
+          }
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|, )CN=Microsoft Corporation(,|$)') {
+            throw 'The installer does not have a valid Microsoft Corporation signature.'
+          }
+          Write-Host "Verified Azure DevOps Server Express $((Get-Item $installer).VersionInfo.ProductVersion)"
+          $log = Join-Path $env:RUNNER_TEMP 'azure-devops-server-install.log'
+          # /Silent installs the binaries only. Do not run TfsConfig or the configuration wizard.
+          $process = Start-Process -FilePath $installer -ArgumentList "/Silent /NoRestart /Log `"$log`"" -Wait -PassThru
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Azure DevOps Server Express installation failed with exit code $($process.ExitCode). See $log."
+          }
+          if ($process.ExitCode -eq 3010) {
+            Write-Warning 'The installer requested a restart; the build and smoke test must pass without restarting the runner.'
+          }
+          $installation = $null
+          foreach ($key in @(
+            'HKLM:\SOFTWARE\Microsoft\TeamFoundationServer\20.0',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\TeamFoundationServer\20.0'
+          )) {
+            if (Test-Path $key) {
+              $installation = (Get-ItemPropertyValue $key -Name InstallPath).TrimEnd('\')
+              break
+            }
+          }
+          if (-not $installation) {
+            throw 'The installer did not register an Azure DevOps Server 20.0 installation.'
+          }
+          foreach ($assembly in @(
+            'Tools\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.dll',
+            'Tools\Plugins\Microsoft.TeamFoundation.DistributedTask.Orchestration.Server.Extensions.dll',
+            'Tools\Microsoft.TeamFoundation.DistributedTask.WebApi.dll',
+            'Tools\Microsoft.TeamFoundation.Framework.Server.dll',
+            'Tools\Newtonsoft.Json.dll'
+          )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $installation $assembly) -PathType Leaf)) {
+              throw "Required build reference was not installed: $assembly"
+            }
+          }
+          "TfsInstallationDirectory=$installation" >> $env:GITHUB_ENV
+
+      - name: Build executable
+        shell: pwsh
+        run: >-
+          msbuild ServerTaskExpressionTester.sln /restore /m
+          /p:Configuration=Release "/p:Platform=Any CPU"
+          "/p:TfsInstallationDirectory=$env:TfsInstallationDirectory"
+
+      - name: Test expressions against installed server assemblies
+        shell: pwsh
+        run: >-
+          powershell.exe -NoProfile -NonInteractive -STA
+          -File tests\ServerSmokeTest.ps1
+          -Executable ServerTaskExpressionTester\bin\Release\ServerTaskExpressionTester.exe
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gate-condition-editor
+          if-no-files-found: error
+          path: |
+            ServerTaskExpressionTester/bin/Release/ServerTaskExpressionTester.exe
+            ServerTaskExpressionTester/bin/Release/ServerTaskExpressionTester.exe.config
+            ServerTaskExpressionTester/bin/Release/ServerTaskExpressionTester.pdb
+
+      - name: Upload installer diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: installer-diagnostics
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/azure-devops-server-install*.log

@@ -37,3 +37,28 @@ The expression smoke test runs against the locally installed server using Window
 ```powershell
 powershell -NoProfile -STA -File tests\ServerSmokeTest.ps1 -Executable ServerTaskExpressionTester\bin\Release\ServerTaskExpressionTester.exe
 ```
+
+### GitHub Actions build
+
+The `Build gate condition editor` workflow runs on a fresh Windows Server 2025
+hosted runner for pushes, pull requests and manual runs. It downloads the pinned
+Azure DevOps Server Express 20.0.37104.1 installer, checks its SHA-256 and Microsoft
+Authenticode signature, and installs the binaries with `/Silent /NoRestart`.
+It does not run the configuration wizard or `TfsConfig`, provision a server,
+or configure IIS, SQL Server or Search. MSBuild receives the registered installation
+path explicitly and the expression smoke test uses those installed assemblies.
+
+The installer comes from Microsoft's [official downloads page](https://learn.microsoft.com/azure/devops/server/download/azuredevopsserver)
+(stable Express EXE, not the release candidate). Express is free for up to five
+users/devices under Microsoft's [Azure DevOps Server license terms](https://visualstudio.microsoft.com/license-terms/azure-devops-server/);
+this workflow uses one unconfigured instance on a disposable runner. Microsoft's
+[installation documentation](https://learn.microsoft.com/azure/devops/server/install/unattended#download-and-install)
+separates this binary-only installation from server configuration.
+When updating the installer, update its versioned URL and SHA-256 together after
+verifying its Microsoft signature.
+
+The `gate-condition-editor` artifact contains only the executable, its configuration
+and symbols, never the installer or server assemblies. The workflow does not
+publish a release or Marketplace extension and does not include ORAS packaging.
+Running the downloaded executable still requires a local Azure DevOps Server
+installation as described above.
