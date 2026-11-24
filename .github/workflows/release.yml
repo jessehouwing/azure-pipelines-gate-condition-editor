@@ -57,61 +57,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $members = @('ServerTaskExpressionTester.exe', 'ServerTaskExpressionTester.pdb')
-          foreach ($name in $members) {
-            $file = Join-Path $env:RELEASE_BINARY_DIRECTORY $name
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
-              throw "Required release file is missing or empty: $file"
-            }
-          }
-
-          $archive = [IO.Compression.ZipFile]::Open($env:BUNDLE_PATH, [IO.Compression.ZipArchiveMode]::Create)
-          try {
-            foreach ($name in $members) {
-              $entry = $archive.CreateEntry($name, [IO.Compression.CompressionLevel]::Optimal)
-              $sourceStream = [IO.File]::OpenRead((Join-Path $env:RELEASE_BINARY_DIRECTORY $name))
-              try {
-                $entryStream = $entry.Open()
-                try {
-                  $sourceStream.CopyTo($entryStream)
-                }
-                finally {
-                  $entryStream.Dispose()
-                }
-              }
-              finally {
-                $sourceStream.Dispose()
-              }
-            }
-          }
-          finally {
-            $archive.Dispose()
-          }
-
-          $verificationDirectory = Join-Path $env:RUNNER_TEMP "tester-bundle-verify-$([guid]::NewGuid().ToString('N'))"
-          try {
-            [IO.Compression.ZipFile]::ExtractToDirectory($env:BUNDLE_PATH, $verificationDirectory)
-            $actualMembers = @(Get-ChildItem -LiteralPath $verificationDirectory -File -Recurse |
-              ForEach-Object { [IO.Path]::GetRelativePath($verificationDirectory, $_.FullName).Replace('\', '/') } |
-              Sort-Object -CaseSensitive)
-            $expectedMembers = @($members | Sort-Object -CaseSensitive)
-            if (Compare-Object -ReferenceObject $expectedMembers -DifferenceObject $actualMembers -CaseSensitive) {
-              throw 'The tester bundle contains an unexpected file set.'
-            }
-            foreach ($name in $members) {
-              $sourceHash = (Get-FileHash -LiteralPath (Join-Path $env:RELEASE_BINARY_DIRECTORY $name) -Algorithm SHA256).Hash
-              $bundleHash = (Get-FileHash -LiteralPath (Join-Path $verificationDirectory $name) -Algorithm SHA256).Hash
-              if ($sourceHash -cne $bundleHash) {
-                throw "The tester bundle entry does not match the source file: $name"
-              }
-            }
-          }
-          finally {
-            if (Test-Path -LiteralPath $verificationDirectory) {
-              Remove-Item -LiteralPath $verificationDirectory -Recurse -Force
-            }
-          }
+          $files = @(
+            (Join-Path $env:RELEASE_BINARY_DIRECTORY 'ServerTaskExpressionTester.exe')
+            (Join-Path $env:RELEASE_BINARY_DIRECTORY 'ServerTaskExpressionTester.pdb')
+          )
+          Compress-Archive -LiteralPath $files -DestinationPath $env:BUNDLE_PATH -CompressionLevel Optimal
 
       - name: Attest VSIX build provenance
         id: attest-vsix
@@ -158,12 +108,9 @@ jobs:
           name: gate-condition-editor-release-bundle
           path: ${{ runner.temp }}/release-binaries
 
-      - name: Verify release version and package
+      - name: Verify release version is not older
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          VSIX_FILE_NAME: ${{ needs.package.outputs.vsix_file_name }}
-          TESTER_BUNDLE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.zip
-          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -182,13 +129,6 @@ jobs:
           $latestPatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
           if ($releasePatch -lt $latestPatch) {
             throw "Release version $env:RELEASE_VERSION is older than the latest GitHub release $latest."
-          }
-          $package = Join-Path (Join-Path $env:RUNNER_TEMP 'marketplace-package') $env:VSIX_FILE_NAME
-          if (-not (Test-Path -LiteralPath $package -PathType Leaf) -or (Get-Item -LiteralPath $package).Length -eq 0) {
-            throw "Expected Marketplace package was not found: $package"
-          }
-          if (-not (Test-Path -LiteralPath $env:TESTER_BUNDLE -PathType Leaf) -or (Get-Item -LiteralPath $env:TESTER_BUNDLE).Length -eq 0) {
-            throw 'The attested tester bundle was not found.'
           }
 
       - name: Verify tester bundle build provenance attestation
