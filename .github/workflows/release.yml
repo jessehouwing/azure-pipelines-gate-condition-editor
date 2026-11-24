@@ -171,7 +171,7 @@ jobs:
             throw 'Release version must use the current 1.1.<patch> format.'
           }
           $releasePatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
-          $latestJson = gh release view latest --repo $env:GITHUB_REPOSITORY --json tagName
+          $latestJson = gh release view --repo $env:GITHUB_REPOSITORY --json tagName
           if ($LASTEXITCODE -ne 0) {
             throw 'Could not read the latest GitHub release.'
           }
