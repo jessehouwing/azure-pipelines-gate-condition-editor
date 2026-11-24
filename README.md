@@ -87,14 +87,14 @@ gate. Packaging and publishing use the `azdo-marketplace` package, query-version
 publish, and wait-for-validation actions. The publish action uses GitHub OIDC
 through Azure login; no PAT or direct TFX invocation is used.
 
-The exact VSIX, executable, and symbols are attested with GitHub build provenance
-and verified before publication. Their attestations are linked from the GitHub
-Release, which includes the VSIX and the same executable/symbol assets as prior
-releases. The release queries the current Marketplace version and skips a duplicate
-publish when that version is already present; in that case it downloads the
-published VSIX and requires its digest to match the attested package. Older versions
-are rejected. It skips an existing published GitHub Release and replaces only an
-existing draft, making retries safe after partial failures.
+The exact VSIX and a ZIP containing `ServerTaskExpressionTester.exe` and its PDB are
+attested with GitHub build provenance and verified before publication. The release
+job attaches that same attested ZIP alongside the VSIX, and links both attestations
+from the GitHub Release. The release queries the current Marketplace version and
+skips a duplicate publish when that version is already present; in that case it
+downloads the published VSIX and requires its digest to match the attested package.
+Older versions are rejected. It skips an existing published GitHub Release and
+replaces only an existing draft, making retries safe after partial failures.
 
 The `marketplace-production` environment is configured to allow deployments from
 `main` and require the sole maintainer as reviewer. **Prevent self-review** is

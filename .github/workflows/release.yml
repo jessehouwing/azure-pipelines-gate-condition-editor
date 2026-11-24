@@ -35,8 +35,7 @@ jobs:
       id-token: write
     outputs:
       vsix_attestation_url: ${{ steps.attest-vsix.outputs.attestation-url }}
-      exe_attestation_url: ${{ steps.attest-exe.outputs.attestation-url }}
-      pdb_attestation_url: ${{ steps.attest-pdb.outputs.attestation-url }}
+      tester_bundle_attestation_url: ${{ steps.attest-tester-bundle.outputs.attestation-url }}
 
     steps:
       - name: Download Marketplace package
@@ -51,23 +50,53 @@ jobs:
           name: gate-condition-editor
           path: ${{ runner.temp }}/release-binaries
 
+      - name: Bundle executable and symbols
+        env:
+          BUNDLE_PATH: ${{ runner.temp }}/ServerTaskExpressionTester.zip
+          RELEASE_BINARY_DIRECTORY: ${{ runner.temp }}/release-binaries
+        run: |
+          set -euo pipefail
+          python3 - "$RELEASE_BINARY_DIRECTORY" "$BUNDLE_PATH" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          source = Path(sys.argv[1])
+          bundle = Path(sys.argv[2])
+          members = ("ServerTaskExpressionTester.exe", "ServerTaskExpressionTester.pdb")
+          for name in members:
+              file = source / name
+              if not file.is_file() or file.stat().st_size == 0:
+                  raise SystemExit(f"Required release file is missing or empty: {file}")
+
+          with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+              for name in members:
+                  archive.write(source / name, arcname=name)
+
+          with zipfile.ZipFile(bundle) as archive:
+              if archive.namelist() != list(members) or archive.testzip() is not None:
+                  raise SystemExit("The tester bundle failed its contents or CRC check.")
+          PY
+
       - name: Attest VSIX build provenance
         id: attest-vsix
         uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
 
-      - name: Attest executable build provenance
-        id: attest-exe
+      - name: Attest tester bundle build provenance
+        id: attest-tester-bundle
         uses: actions/attest-build-provenance@v4.2.2
         with:
-          subject-path: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
+          subject-path: ${{ runner.temp }}/ServerTaskExpressionTester.zip
 
-      - name: Attest symbols build provenance
-        id: attest-pdb
-        uses: actions/attest-build-provenance@v4.2.2
+      - name: Upload attested tester bundle
+        uses: actions/upload-artifact@v6.0.0
         with:
-          subject-path: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
+          name: gate-condition-editor-release-bundle
+          path: ${{ runner.temp }}/ServerTaskExpressionTester.zip
+          if-no-files-found: error
+          retention-days: 1
 
   release:
     if: ${{ inputs.publish_marketplace && github.ref == 'refs/heads/main' }}
@@ -88,18 +117,17 @@ jobs:
           name: gate-condition-editor-vsix
           path: ${{ runner.temp }}/marketplace-package
 
-      - name: Download executable release artifacts
+      - name: Download attested tester bundle
         uses: actions/download-artifact@v8.0.2
         with:
-          name: gate-condition-editor
+          name: gate-condition-editor-release-bundle
           path: ${{ runner.temp }}/release-binaries
 
       - name: Verify release version and package
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           VSIX_FILE_NAME: ${{ needs.package.outputs.vsix_file_name }}
-          EXE_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
-          PDB_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
+          TESTER_BUNDLE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.zip
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -123,28 +151,18 @@ jobs:
             echo "Expected Marketplace package was not found: $package" >&2
             exit 1
           fi
-          if [[ ! -s "$EXE_FILE" || ! -s "$PDB_FILE" ]]; then
-            echo "Expected executable and symbol release artifacts were not found." >&2
+          if [[ ! -s "$TESTER_BUNDLE" ]]; then
+            echo "The attested tester bundle was not found." >&2
             exit 1
           fi
 
-      - name: Verify executable build provenance attestation
+      - name: Verify tester bundle build provenance attestation
         env:
           GH_TOKEN: ${{ github.token }}
-          EXE_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
+          TESTER_BUNDLE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.zip
         run: |
           set -euo pipefail
-          gh attestation verify "$EXE_FILE" \
-            --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
-
-      - name: Verify symbols build provenance attestation
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PDB_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
-        run: |
-          set -euo pipefail
-          gh attestation verify "$PDB_FILE" \
+          gh attestation verify "$TESTER_BUNDLE" \
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
 
@@ -280,14 +298,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.version }}
           VSIX_PATH: ${{ steps.download-published.outputs.vsix-file || format('{0}/marketplace-package/{1}', runner.temp, needs.package.outputs.vsix_file_name) }}
-          EXE_PATH: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
-          PDB_PATH: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
+          TESTER_BUNDLE_PATH: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.zip
           VSIX_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.vsix_attestation_url }}
-          EXE_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.exe_attestation_url }}
-          PDB_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.pdb_attestation_url }}
+          TESTER_BUNDLE_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.tester_bundle_attestation_url }}
         run: |
           set -euo pipefail
-          if [[ -z "$VSIX_ATTESTATION_URL" || -z "$EXE_ATTESTATION_URL" || -z "$PDB_ATTESTATION_URL" ]]; then
+          if [[ -z "$VSIX_ATTESTATION_URL" || -z "$TESTER_BUNDLE_ATTESTATION_URL" ]]; then
             echo "A release artifact provenance attestation URL is missing." >&2
             exit 1
           fi
@@ -310,8 +326,7 @@ jobs:
           notes="## Build provenance
 
           - VSIX attestation: $VSIX_ATTESTATION_URL
-          - Executable attestation: $EXE_ATTESTATION_URL
-          - Symbols attestation: $PDB_ATTESTATION_URL"
+          - Tester bundle attestation: $TESTER_BUNDLE_ATTESTATION_URL"
           gh release create "$RELEASE_VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$RELEASE_VERSION" \
@@ -319,5 +334,4 @@ jobs:
             --notes "$notes" \
             --target "$GITHUB_SHA" \
             "$VSIX_PATH" \
-            "$EXE_PATH" \
-            "$PDB_PATH"
+            "$TESTER_BUNDLE_PATH"
