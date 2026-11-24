@@ -5,6 +5,13 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      extension_version:
+        description: Extension version to package
+        required: false
+        type: string
+        default: '0.0.0'
 
 permissions:
   contents: read
@@ -30,7 +37,16 @@ jobs:
         with:
           vs-version: '[18.0,19.0)'
 
+      - name: Restore verified Server DLL cache
+        id: server-dll-cache
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ${{ runner.temp }}\server-dll-cache
+          key: azure-devops-server-dlls-20.0.37104.1-${{ runner.os }}-vs2026-5ed741f3a96c4677c431550fe345302e9d98831c0e405ea7735d5377e9c034fa
+
       - name: Install Azure DevOps Server Express (without configuration)
+        if: ${{ steps.server-dll-cache.outputs.cache-hit != 'true' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -83,6 +99,15 @@ jobs:
           }
           "TfsInstallationDirectory=$installation" >> $env:GITHUB_ENV
 
+      - name: Validate cached Server DLLs
+        if: ${{ steps.server-dll-cache.outputs.cache-hit == 'true' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cache = Join-Path $env:RUNNER_TEMP 'server-dll-cache'
+          & tests\ServerDllCache.ps1 -Mode Validate -CacheDirectory $cache
+          "TfsInstallationDirectory=$cache" >> $env:GITHUB_ENV
+
       - name: Build executable
         shell: pwsh
         run: >-
@@ -91,11 +116,88 @@ jobs:
           "/p:TfsInstallationDirectory=$env:TfsInstallationDirectory"
 
       - name: Test expressions against installed server assemblies
+        if: ${{ steps.server-dll-cache.outputs.cache-hit != 'true' }}
         shell: pwsh
         run: >-
           powershell.exe -NoProfile -NonInteractive -STA
           -File tests\ServerSmokeTest.ps1
           -Executable ServerTaskExpressionTester\bin\Release\ServerTaskExpressionTester.exe
+
+      - name: Test expressions against cached server assemblies
+        if: ${{ steps.server-dll-cache.outputs.cache-hit == 'true' }}
+        shell: pwsh
+        run: >-
+          powershell.exe -NoProfile -NonInteractive -STA
+          -File tests\ServerSmokeTest.ps1
+          -Executable ServerTaskExpressionTester\bin\Release\ServerTaskExpressionTester.exe
+          -TfsInstallationDirectory "$env:TfsInstallationDirectory"
+
+      - name: Stage verified Server DLLs for cache
+        if: ${{ steps.server-dll-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cache = Join-Path $env:RUNNER_TEMP 'server-dll-cache'
+          & tests\ServerDllCache.ps1 -Mode Populate -CacheDirectory $cache -SourceDirectory $env:TfsInstallationDirectory
+
+      - name: Save verified Server DLL cache
+        if: ${{ steps.server-dll-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ runner.temp }}\server-dll-cache
+          key: azure-devops-server-dlls-20.0.37104.1-${{ runner.os }}-vs2026-5ed741f3a96c4677c431550fe345302e9d98831c0e405ea7735d5377e9c034fa
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Package Marketplace extension
+        shell: pwsh
+        env:
+          EXTENSION_VERSION: ${{ inputs.extension_version || '0.0.0' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:EXTENSION_VERSION -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'The extension version must use the numeric major.minor.patch format.'
+          }
+          $overrides = Join-Path $env:RUNNER_TEMP 'extension-overrides.json'
+          @{ version = $env:EXTENSION_VERSION } |
+            ConvertTo-Json -Compress |
+            Set-Content -LiteralPath $overrides -Encoding utf8
+          $vsix = Join-Path $env:RUNNER_TEMP "gate-condition-editor-$($env:EXTENSION_VERSION).vsix"
+          npx --yes tfx-cli@0.24.2 extension create --root . --manifests vss-extension.json --overrides-file $overrides --output-path $vsix --no-prompt
+          if ($LASTEXITCODE -ne 0) {
+            throw "tfx extension create failed with exit code $LASTEXITCODE."
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $package = [IO.Compression.ZipFile]::OpenRead($vsix)
+          try {
+            $manifestEntry = $package.GetEntry('extension.vsixmanifest')
+            if (-not $manifestEntry) {
+              throw 'The VSIX package does not contain extension.vsixmanifest.'
+            }
+            $reader = [IO.StreamReader]::new($manifestEntry.Open())
+            try {
+              [xml]$manifest = $reader.ReadToEnd()
+            }
+            finally {
+              $reader.Dispose()
+            }
+            $identity = $manifest.SelectSingleNode("//*[local-name()='Identity']")
+            if (-not $identity -or
+                $identity.GetAttribute('Publisher') -ne 'jessehouwing' -or
+                $identity.GetAttribute('Version') -ne $env:EXTENSION_VERSION) {
+              throw 'The VSIX publisher or version does not match the requested release.'
+            }
+            if ($package.Entries.FullName -match '(?i)(^|/)(azuredevopsexpress\.exe|Microsoft\.TeamFoundation\..*\.dll)$') {
+              throw 'The VSIX must not contain the Azure DevOps Server installer or server assemblies.'
+            }
+          }
+          finally {
+            $package.Dispose()
+          }
 
       - name: Upload executable
         uses: actions/upload-artifact@v7.0.2
@@ -106,6 +208,14 @@ jobs:
             ServerTaskExpressionTester/bin/Release/ServerTaskExpressionTester.exe
             ServerTaskExpressionTester/bin/Release/ServerTaskExpressionTester.exe.config
             ServerTaskExpressionTester/bin/Release/ServerTaskExpressionTester.pdb
+
+      - name: Upload Marketplace package
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gate-condition-editor-vsix
+          if-no-files-found: error
+          path: ${{ runner.temp }}\gate-condition-editor-${{ inputs.extension_version || '0.0.0' }}.vsix
+          retention-days: 7
 
       - name: Upload installer diagnostics
         if: ${{ failure() }}

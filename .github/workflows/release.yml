@@ -1,0 +1,111 @@
+name: Release gate condition editor
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Next Marketplace and GitHub release version (for example 1.1.53)
+        required: true
+        type: string
+      publish_marketplace:
+        description: Publish to the Marketplace and create a GitHub Release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    uses: $/.github/workflows/build.yml
+    with:
+      extension_version: ${{ inputs.version }}
+
+  release:
+    if: ${{ inputs.publish_marketplace && github.ref == 'refs/heads/main' }}
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: marketplace-production
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Download Marketplace package
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor-vsix
+          path: marketplace-package
+
+      - name: Verify release version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^1\.1\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release version must use the current 1.1.<patch> format." >&2
+            exit 1
+          fi
+          latest="$(gh release view latest --json tagName --jq .tagName)"
+          if [[ ! "$latest" =~ ^1\.1\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Latest GitHub release tag '$latest' is not in the expected 1.1.<patch> format." >&2
+            exit 1
+          fi
+          release_patch="${RELEASE_VERSION##*.}"
+          latest_patch="${latest##*.}"
+          if (( release_patch <= latest_patch )); then
+            echo "Release version $RELEASE_VERSION must be higher than $latest." >&2
+            exit 1
+          fi
+          package="marketplace-package/gate-condition-editor-$RELEASE_VERSION.vsix"
+          if [[ ! -s "$package" ]]; then
+            echo "Expected Marketplace package was not found: $package" >&2
+            exit 1
+          fi
+          echo "VSIX_PATH=$package" >> "$GITHUB_ENV"
+
+      - name: Validate federated identity configuration
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$AZURE_CLIENT_ID" || -z "$AZURE_TENANT_ID" ]]; then
+            echo "Configure AZURE_CLIENT_ID and AZURE_TENANT_ID as marketplace-production environment variables and ensure the Entra app trusts this GitHub environment." >&2
+            exit 1
+          fi
+
+      - name: Sign in with GitHub OIDC
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+          audience: api://AzureADTokenExchange
+
+      - name: Publish extension to Visual Studio Marketplace
+        run: |
+          set -euo pipefail
+          token="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken --output tsv)"
+          if [[ -z "$token" ]]; then
+            echo "Azure CLI did not return an Azure DevOps access token." >&2
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          npx --yes tfx-cli@0.24.2 extension publish \
+            --publisher jessehouwing \
+            --vsix "$VSIX_PATH" \
+            --auth-type pat \
+            --token "$token" \
+            --no-wait-validation \
+            --no-prompt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: gh release create "$RELEASE_VERSION" --title "$RELEASE_VERSION" --generate-notes --target "$GITHUB_SHA"

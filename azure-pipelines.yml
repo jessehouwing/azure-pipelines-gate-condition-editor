@@ -48,29 +48,7 @@ steps:
     extensionVersion: '$(Build.BuildNumber)'
     updateTasksVersion: false
     
-- task: PublishAzureDevOpsExtension@5
-  inputs:
-    connectTo: 'AzureRM'
-    connectedServiceNameAzureRM: azure-devops-marketplace
-    fileType: 'vsix'
-    vsixFile: '$(vsix)'
-    updateTasksVersion: false
-    noWaitValidation: true
-
 - task: PublishPipelineArtifact@1
   inputs:
     targetPath: '$(Build.ArtifactStagingDirectory)'
     artifact: 'Output'
-
-- task: GitHubRelease@1
-  inputs:
-    gitHubConnection: 'GitHub - jessehouwing'
-    repositoryName: '$(Build.Repository.Name)'
-    action: 'create'
-    target: '$(Build.SourceVersion)'
-    tagSource: 'userSpecifiedTag'
-    tag: '$(Build.BuildNumber)'
-    title: '$(Build.BuildNumber)'
-    releaseNotesSource: 'inline'
-    changeLogCompareToRelease: 'lastFullRelease'
-    changeLogType: 'commitBased'

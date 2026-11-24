@@ -59,7 +59,50 @@ When updating the installer, update its versioned URL and SHA-256 together after
 verifying its Microsoft signature.
 
 The `gate-condition-editor` artifact contains only the executable, its configuration
-and symbols, never the installer or server assemblies. The workflow does not
-publish a release or Marketplace extension and does not include ORAS packaging.
+and symbols, never the installer or server assemblies. The workflow also packages
+the Marketplace extension and uploads the VSIX as a separate, short-lived
+`gate-condition-editor-vsix` artifact. The maintainer has confirmed permission for
+private Actions-cache storage; the workflow caches only the eight
+Microsoft-signed DLLs used by the build and smoke test, preserving their `Tools` and
+`Tools\Plugins` relative paths. On a cache miss, it verifies the official installer's
+SHA-256 and Microsoft Authenticode signature before installing and staging those
+DLLs. On a hit, it checks the exact file set, Authenticode signatures and assembly
+identities before building and running the smoke test against the cache directory.
+Fork pull requests do not restore the cache; only `main` can populate it. DLLs are
+never uploaded as workflow artifacts or included in the VSIX.
+
+This repository's existing documentation notes that Azure DevOps Server assemblies
+cannot be redistributed. The maintainer has confirmed that private GitHub
+Actions-cache storage is permitted for this use; the cache is restricted to the
+verified DLLs and is not exposed as a workflow artifact or in the VSIX.
+
+### GitHub Actions release
+
+The `Release gate condition editor` workflow replaces the Azure Pipelines
+Marketplace/GitHub release steps. It can be started manually from `main`; enter the
+next `1.1.<patch>` version (greater than the latest GitHub release) and leave
+`publish_marketplace` unchecked to package only. Publishing requires explicitly
+checking that input and passing the `marketplace-production` GitHub Environment
+gate. The release publishes with Marketplace validation non-blocking, then creates
+a GitHub Release with generated commit-based notes, matching the previous release
+behavior.
+
+Before enabling production publishing, configure the `marketplace-production`
+environment to allow deployments from `main` and require the sole maintainer as a
+reviewer. Leave GitHub's **Prevent self-review** option disabled so the maintainer
+can approve their own release. Define the non-secret environment variables
+`AZURE_CLIENT_ID` and `AZURE_TENANT_ID` for the Microsoft Entra application used by
+the existing AzureRM Marketplace service connection. The app must already trust
+GitHub Actions OIDC tokens for this repository and environment and be a member of
+the `jessehouwing` Marketplace publisher. Azure DevOps Pipeline workload identity
+federation does not automatically grant GitHub Actions federation; this workflow
+does not add or change Entra credentials. Microsoft documents Marketplace publishing
+with Entra tokens; the workflow obtains a short-lived Azure DevOps token via OIDC
+and passes it to `tfx-cli`. No PAT is required.
+
+The legacy `azure-pipelines.yml` continues building and publishing its pipeline
+artifact, but no longer publishes to the Marketplace or creates GitHub Releases.
+No ORAS packaging is used.
+
 Running the downloaded executable still requires a local Azure DevOps Server
 installation as described above.
