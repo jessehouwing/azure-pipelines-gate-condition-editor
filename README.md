@@ -83,22 +83,26 @@ Marketplace/GitHub release steps. It can be started manually from `main`; enter 
 next `1.1.<patch>` version (greater than the latest GitHub release) and leave
 `publish_marketplace` unchecked to package only. Publishing requires explicitly
 checking that input and passing the `marketplace-production` GitHub Environment
-gate. The release publishes with Marketplace validation non-blocking, then creates
-a GitHub Release with generated commit-based notes, matching the previous release
-behavior.
+gate. Packaging and publishing use the `azdo-marketplace` package, query-version,
+publish, and wait-for-validation actions. The publish action uses GitHub OIDC
+through Azure login; no PAT or direct TFX invocation is used.
 
-Before enabling production publishing, configure the `marketplace-production`
-environment to allow deployments from `main` and require the sole maintainer as a
-reviewer. Leave GitHub's **Prevent self-review** option disabled so the maintainer
-can approve their own release. Define the non-secret environment variables
-`AZURE_CLIENT_ID` and `AZURE_TENANT_ID` for the Microsoft Entra application used by
-the existing AzureRM Marketplace service connection. The app must already trust
-GitHub Actions OIDC tokens for this repository and environment and be a member of
-the `jessehouwing` Marketplace publisher. Azure DevOps Pipeline workload identity
-federation does not automatically grant GitHub Actions federation; this workflow
-does not add or change Entra credentials. Microsoft documents Marketplace publishing
-with Entra tokens; the workflow obtains a short-lived Azure DevOps token via OIDC
-and passes it to `tfx-cli`. No PAT is required.
+The exact VSIX, executable, and symbols are attested with GitHub build provenance
+and verified before publication. Their attestations are linked from the GitHub
+Release, which includes the VSIX and the same executable/symbol assets as prior
+releases. The release queries the current Marketplace version and skips a duplicate
+publish when that version is already present; in that case it downloads the
+published VSIX and requires its digest to match the attested package. Older versions
+are rejected. It skips an existing published GitHub Release and replaces only an
+existing draft, making retries safe after partial failures.
+
+The `marketplace-production` environment is configured to allow deployments from
+`main` and require the sole maintainer as reviewer. **Prevent self-review** is
+disabled so the maintainer can approve their own release. The environment contains
+the non-secret `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` variables, and the Entra app
+has a federated credential for this repository and environment. The app must remain
+a member of the `jessehouwing` Marketplace publisher. Azure DevOps Pipeline workload
+identity federation does not automatically grant GitHub Actions federation.
 
 The legacy `azure-pipelines.yml` continues building and publishing its pipeline
 artifact, but no longer publishes to the Marketplace or creates GitHub Releases.

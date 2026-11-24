@@ -12,6 +12,10 @@ on:
         required: false
         type: string
         default: '0.0.0'
+    outputs:
+      vsix_file_name:
+        description: Name of the packaged Marketplace VSIX
+        value: ${{ jobs.build.outputs.vsix_file_name }}
 
 permissions:
   contents: read
@@ -25,6 +29,8 @@ jobs:
     name: Build with Azure DevOps Server Express
     runs-on: windows-2025-vs2026
     timeout-minutes: 60
+    outputs:
+      vsix_file_name: ${{ steps.package.outputs.vsix-file-name }}
 
     steps:
       - name: Checkout repository
@@ -147,32 +153,32 @@ jobs:
           path: ${{ runner.temp }}\server-dll-cache
           key: azure-devops-server-dlls-20.0.37104.1-${{ runner.os }}-vs2026-5ed741f3a96c4677c431550fe345302e9d98831c0e405ea7735d5377e9c034fa
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7.1.0
-        with:
-          node-version: '24'
-
       - name: Package Marketplace extension
+        id: package
+        uses: jessehouwing/azdo-marketplace/package@v6.4.1
+        with:
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          manifest-file: vss-extension.json
+          extension-version: ${{ inputs.extension_version || '0.0.0' }}
+          output-path: ${{ runner.temp }}
+
+      - name: Verify Marketplace package contents
         shell: pwsh
         env:
           EXTENSION_VERSION: ${{ inputs.extension_version || '0.0.0' }}
+          VSIX_FILE: ${{ steps.package.outputs.vsix-file }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:EXTENSION_VERSION -notmatch '^\d+\.\d+\.\d+$') {
             throw 'The extension version must use the numeric major.minor.patch format.'
           }
-          $overrides = Join-Path $env:RUNNER_TEMP 'extension-overrides.json'
-          @{ version = $env:EXTENSION_VERSION } |
-            ConvertTo-Json -Compress |
-            Set-Content -LiteralPath $overrides -Encoding utf8
-          $vsix = Join-Path $env:RUNNER_TEMP "gate-condition-editor-$($env:EXTENSION_VERSION).vsix"
-          npx --yes tfx-cli@0.24.2 extension create --root . --manifests vss-extension.json --overrides-file $overrides --output-path $vsix --no-prompt
-          if ($LASTEXITCODE -ne 0) {
-            throw "tfx extension create failed with exit code $LASTEXITCODE."
+          if (-not (Test-Path -LiteralPath $env:VSIX_FILE -PathType Leaf)) {
+            throw 'The Marketplace package task did not produce its VSIX output.'
           }
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $package = [IO.Compression.ZipFile]::OpenRead($vsix)
+          $package = [IO.Compression.ZipFile]::OpenRead($env:VSIX_FILE)
           try {
             $manifestEntry = $package.GetEntry('extension.vsixmanifest')
             if (-not $manifestEntry) {
@@ -188,8 +194,9 @@ jobs:
             $identity = $manifest.SelectSingleNode("//*[local-name()='Identity']")
             if (-not $identity -or
                 $identity.GetAttribute('Publisher') -ne 'jessehouwing' -or
+                $identity.GetAttribute('Id') -ne 'gate-condition-editor' -or
                 $identity.GetAttribute('Version') -ne $env:EXTENSION_VERSION) {
-              throw 'The VSIX publisher or version does not match the requested release.'
+              throw 'The VSIX publisher, extension ID, or version does not match the requested package.'
             }
             if ($package.Entries.FullName -match '(?i)(^|/)(azuredevopsexpress\.exe|Microsoft\.TeamFoundation\..*\.dll)$') {
               throw 'The VSIX must not contain the Azure DevOps Server installer or server assemblies.'
@@ -214,7 +221,7 @@ jobs:
         with:
           name: gate-condition-editor-vsix
           if-no-files-found: error
-          path: ${{ runner.temp }}\gate-condition-editor-${{ inputs.extension_version || '0.0.0' }}.vsix
+          path: ${{ steps.package.outputs.vsix-file }}
           retention-days: 7
 
       - name: Upload installer diagnostics

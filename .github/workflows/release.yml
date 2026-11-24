@@ -19,17 +19,65 @@ permissions:
 jobs:
   package:
     uses: $/.github/workflows/build.yml
+    permissions:
+      contents: read
     with:
       extension_version: ${{ inputs.version }}
 
-  release:
+  attest-release-artifacts:
     if: ${{ inputs.publish_marketplace && github.ref == 'refs/heads/main' }}
     needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    outputs:
+      vsix_attestation_url: ${{ steps.attest-vsix.outputs.attestation-url }}
+      exe_attestation_url: ${{ steps.attest-exe.outputs.attestation-url }}
+      pdb_attestation_url: ${{ steps.attest-pdb.outputs.attestation-url }}
+
+    steps:
+      - name: Download Marketplace package
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor-vsix
+          path: ${{ runner.temp }}/marketplace-package
+
+      - name: Download executable release artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor
+          path: ${{ runner.temp }}/release-binaries
+
+      - name: Attest VSIX build provenance
+        id: attest-vsix
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
+
+      - name: Attest executable build provenance
+        id: attest-exe
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
+
+      - name: Attest symbols build provenance
+        id: attest-pdb
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
+
+  release:
+    if: ${{ inputs.publish_marketplace && github.ref == 'refs/heads/main' }}
+    needs: [package, attest-release-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
       name: marketplace-production
     permissions:
+      attestations: read
       contents: write
       id-token: write
 
@@ -38,11 +86,20 @@ jobs:
         uses: actions/download-artifact@v8.0.2
         with:
           name: gate-condition-editor-vsix
-          path: marketplace-package
+          path: ${{ runner.temp }}/marketplace-package
 
-      - name: Verify release version
+      - name: Download executable release artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor
+          path: ${{ runner.temp }}/release-binaries
+
+      - name: Verify release version and package
         env:
           RELEASE_VERSION: ${{ inputs.version }}
+          VSIX_FILE_NAME: ${{ needs.package.outputs.vsix_file_name }}
+          EXE_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
+          PDB_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -50,34 +107,56 @@ jobs:
             echo "Release version must use the current 1.1.<patch> format." >&2
             exit 1
           fi
-          latest="$(gh release view latest --json tagName --jq .tagName)"
+          latest="$(gh release view latest --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
           if [[ ! "$latest" =~ ^1\.1\.(0|[1-9][0-9]*)$ ]]; then
             echo "Latest GitHub release tag '$latest' is not in the expected 1.1.<patch> format." >&2
             exit 1
           fi
           release_patch="${RELEASE_VERSION##*.}"
           latest_patch="${latest##*.}"
-          if (( release_patch <= latest_patch )); then
-            echo "Release version $RELEASE_VERSION must be higher than $latest." >&2
+          if (( release_patch < latest_patch )); then
+            echo "Release version $RELEASE_VERSION is older than the latest GitHub release $latest." >&2
             exit 1
           fi
-          package="marketplace-package/gate-condition-editor-$RELEASE_VERSION.vsix"
+          package="$RUNNER_TEMP/marketplace-package/$VSIX_FILE_NAME"
           if [[ ! -s "$package" ]]; then
             echo "Expected Marketplace package was not found: $package" >&2
             exit 1
           fi
-          echo "VSIX_PATH=$package" >> "$GITHUB_ENV"
-
-      - name: Validate federated identity configuration
-        env:
-          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$AZURE_CLIENT_ID" || -z "$AZURE_TENANT_ID" ]]; then
-            echo "Configure AZURE_CLIENT_ID and AZURE_TENANT_ID as marketplace-production environment variables and ensure the Entra app trusts this GitHub environment." >&2
+          if [[ ! -s "$EXE_FILE" || ! -s "$PDB_FILE" ]]; then
+            echo "Expected executable and symbol release artifacts were not found." >&2
             exit 1
           fi
+
+      - name: Verify executable build provenance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
+        run: |
+          set -euo pipefail
+          gh attestation verify "$EXE_FILE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+
+      - name: Verify symbols build provenance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PDB_FILE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
+        run: |
+          set -euo pipefail
+          gh attestation verify "$PDB_FILE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+
+      - name: Verify VSIX build provenance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VSIX_FILE: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "$VSIX_FILE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
 
       - name: Sign in with GitHub OIDC
         uses: azure/login@v3.1.0
@@ -87,25 +166,158 @@ jobs:
           allow-no-subscriptions: true
           audience: api://AzureADTokenExchange
 
-      - name: Publish extension to Visual Studio Marketplace
+      - name: Query current Marketplace version
+        id: marketplace-version
+        uses: jessehouwing/azdo-marketplace/query-version@v6.4.1
+        with:
+          auth-type: oidc
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          version-source: |
+            marketplace
+            0.0.0
+          marketplace-version-action: None
+
+      - name: Decide whether to publish
+        id: release-state
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          MARKETPLACE_VERSION: ${{ steps.marketplace-version.outputs.current-version }}
         run: |
           set -euo pipefail
-          token="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken --output tsv)"
-          if [[ -z "$token" ]]; then
-            echo "Azure CLI did not return an Azure DevOps access token." >&2
+          if [[ "$MARKETPLACE_VERSION" == '0.0.0' ]]; then
+            marketplace_patch=0
+          elif [[ "$MARKETPLACE_VERSION" =~ ^1\.1\.(0|[1-9][0-9]*)$ ]]; then
+            marketplace_patch="${BASH_REMATCH[1]}"
+          else
+            echo "Marketplace version '$MARKETPLACE_VERSION' is not in the expected 1.1.<patch> format." >&2
             exit 1
           fi
-          echo "::add-mask::$token"
-          npx --yes tfx-cli@0.24.2 extension publish \
-            --publisher jessehouwing \
-            --vsix "$VSIX_PATH" \
-            --auth-type pat \
-            --token "$token" \
-            --no-wait-validation \
-            --no-prompt
+
+          release_patch="${RELEASE_VERSION##*.}"
+          if (( release_patch < marketplace_patch )); then
+            echo "Release version $RELEASE_VERSION is older than the current Marketplace version $MARKETPLACE_VERSION." >&2
+            exit 1
+          fi
+
+          if (( release_patch == marketplace_patch )); then
+            echo "publish_required=false" >> "$GITHUB_OUTPUT"
+            echo "Marketplace already has version $RELEASE_VERSION; skipping duplicate publication."
+          else
+            echo "publish_required=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish extension to Visual Studio Marketplace
+        if: ${{ steps.release-state.outputs.publish_required == 'true' }}
+        id: publish
+        uses: jessehouwing/azdo-marketplace/publish@v6.4.1
+        with:
+          auth-type: oidc
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          use: vsix
+          vsix-file: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
+          no-wait-validation: true
+
+      - name: Verify published task preserved the attested VSIX
+        if: ${{ steps.release-state.outputs.publish_required == 'true' }}
+        env:
+          ATTESTED_VSIX: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
+          PUBLISHED_VSIX: ${{ steps.publish.outputs.vsix-file }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s "$PUBLISHED_VSIX" ]]; then
+            echo "The Marketplace publish action did not return its VSIX file." >&2
+            exit 1
+          fi
+          if [[ "$(sha256sum "$ATTESTED_VSIX" | cut -d ' ' -f 1)" != "$(sha256sum "$PUBLISHED_VSIX" | cut -d ' ' -f 1)" ]]; then
+            echo "The Marketplace publish action changed the attested VSIX." >&2
+            exit 1
+          fi
+
+      - name: Download already-published VSIX for an idempotent retry
+        if: ${{ steps.release-state.outputs.publish_required == 'false' }}
+        id: download-published
+        uses: jessehouwing/azdo-marketplace/download-vsix@v6.4.1
+        with:
+          auth-type: oidc
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          version: ${{ inputs.version }}
+          output-path: ${{ runner.temp }}/published-marketplace-package
+
+      - name: Verify existing Marketplace package matches this attestation
+        if: ${{ steps.release-state.outputs.publish_required == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTED_VSIX: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
+          PUBLISHED_VSIX: ${{ steps.download-published.outputs.vsix-file }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s "$PUBLISHED_VSIX" ]]; then
+            echo "The existing Marketplace version could not be downloaded." >&2
+            exit 1
+          fi
+          if [[ "$(sha256sum "$ATTESTED_VSIX" | cut -d ' ' -f 1)" != "$(sha256sum "$PUBLISHED_VSIX" | cut -d ' ' -f 1)" ]]; then
+            echo "The existing Marketplace VSIX differs from the attested package; refusing to publish a mismatched GitHub asset." >&2
+            exit 1
+          fi
+          gh attestation verify "$PUBLISHED_VSIX" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+
+      - name: Wait for Marketplace validation
+        uses: jessehouwing/azdo-marketplace/wait-for-validation@v6.4.1
+        with:
+          auth-type: oidc
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          vsix-file: ${{ steps.publish.outputs.vsix-file || steps.download-published.outputs.vsix-file }}
+          timeout-minutes: '30'
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.version }}
-        run: gh release create "$RELEASE_VERSION" --title "$RELEASE_VERSION" --generate-notes --target "$GITHUB_SHA"
+          VSIX_PATH: ${{ steps.download-published.outputs.vsix-file || format('{0}/marketplace-package/{1}', runner.temp, needs.package.outputs.vsix_file_name) }}
+          EXE_PATH: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.exe
+          PDB_PATH: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.pdb
+          VSIX_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.vsix_attestation_url }}
+          EXE_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.exe_attestation_url }}
+          PDB_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.pdb_attestation_url }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$VSIX_ATTESTATION_URL" || -z "$EXE_ATTESTATION_URL" || -z "$PDB_ATTESTATION_URL" ]]; then
+            echo "A release artifact provenance attestation URL is missing." >&2
+            exit 1
+          fi
+          releases="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft)"
+          existing="$(jq -c --arg version "$RELEASE_VERSION" '[.[] | select(.tagName == $version)]' <<< "$releases")"
+          existing_count="$(jq 'length' <<< "$existing")"
+
+          if (( existing_count > 1 )); then
+            echo "Multiple GitHub releases exist for $RELEASE_VERSION." >&2
+            exit 1
+          elif (( existing_count == 1 )); then
+            is_draft="$(jq -r '.[0].isDraft' <<< "$existing")"
+            if [[ "$is_draft" != 'true' ]]; then
+              echo "GitHub release $RELEASE_VERSION already exists; skipping duplicate creation."
+              exit 0
+            fi
+            gh release delete "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --yes
+          fi
+
+          notes="## Build provenance
+
+          - VSIX attestation: $VSIX_ATTESTATION_URL
+          - Executable attestation: $EXE_ATTESTATION_URL
+          - Symbols attestation: $PDB_ATTESTATION_URL"
+          gh release create "$RELEASE_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$RELEASE_VERSION" \
+            --generate-notes \
+            --notes "$notes" \
+            --target "$GITHUB_SHA" \
+            "$VSIX_PATH" \
+            "$EXE_PATH" \
+            "$PDB_PATH"
