@@ -54,29 +54,64 @@ jobs:
         env:
           BUNDLE_PATH: ${{ runner.temp }}/ServerTaskExpressionTester.zip
           RELEASE_BINARY_DIRECTORY: ${{ runner.temp }}/release-binaries
+        shell: pwsh
         run: |
-          set -euo pipefail
-          python3 - "$RELEASE_BINARY_DIRECTORY" "$BUNDLE_PATH" <<'PY'
-          import sys
-          import zipfile
-          from pathlib import Path
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $members = @('ServerTaskExpressionTester.exe', 'ServerTaskExpressionTester.pdb')
+          foreach ($name in $members) {
+            $file = Join-Path $env:RELEASE_BINARY_DIRECTORY $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
+              throw "Required release file is missing or empty: $file"
+            }
+          }
 
-          source = Path(sys.argv[1])
-          bundle = Path(sys.argv[2])
-          members = ("ServerTaskExpressionTester.exe", "ServerTaskExpressionTester.pdb")
-          for name in members:
-              file = source / name
-              if not file.is_file() or file.stat().st_size == 0:
-                  raise SystemExit(f"Required release file is missing or empty: {file}")
+          $archive = [IO.Compression.ZipFile]::Open($env:BUNDLE_PATH, [IO.Compression.ZipArchiveMode]::Create)
+          try {
+            foreach ($name in $members) {
+              $entry = $archive.CreateEntry($name, [IO.Compression.CompressionLevel]::Optimal)
+              $sourceStream = [IO.File]::OpenRead((Join-Path $env:RELEASE_BINARY_DIRECTORY $name))
+              try {
+                $entryStream = $entry.Open()
+                try {
+                  $sourceStream.CopyTo($entryStream)
+                }
+                finally {
+                  $entryStream.Dispose()
+                }
+              }
+              finally {
+                $sourceStream.Dispose()
+              }
+            }
+          }
+          finally {
+            $archive.Dispose()
+          }
 
-          with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-              for name in members:
-                  archive.write(source / name, arcname=name)
-
-          with zipfile.ZipFile(bundle) as archive:
-              if archive.namelist() != list(members) or archive.testzip() is not None:
-                  raise SystemExit("The tester bundle failed its contents or CRC check.")
-          PY
+          $verificationDirectory = Join-Path $env:RUNNER_TEMP "tester-bundle-verify-$([guid]::NewGuid().ToString('N'))"
+          try {
+            [IO.Compression.ZipFile]::ExtractToDirectory($env:BUNDLE_PATH, $verificationDirectory)
+            $actualMembers = @(Get-ChildItem -LiteralPath $verificationDirectory -File -Recurse |
+              ForEach-Object { [IO.Path]::GetRelativePath($verificationDirectory, $_.FullName).Replace('\', '/') } |
+              Sort-Object -CaseSensitive)
+            $expectedMembers = @($members | Sort-Object -CaseSensitive)
+            if (Compare-Object -ReferenceObject $expectedMembers -DifferenceObject $actualMembers -CaseSensitive) {
+              throw 'The tester bundle contains an unexpected file set.'
+            }
+            foreach ($name in $members) {
+              $sourceHash = (Get-FileHash -LiteralPath (Join-Path $env:RELEASE_BINARY_DIRECTORY $name) -Algorithm SHA256).Hash
+              $bundleHash = (Get-FileHash -LiteralPath (Join-Path $verificationDirectory $name) -Algorithm SHA256).Hash
+              if ($sourceHash -cne $bundleHash) {
+                throw "The tester bundle entry does not match the source file: $name"
+              }
+            }
+          }
+          finally {
+            if (Test-Path -LiteralPath $verificationDirectory) {
+              Remove-Item -LiteralPath $verificationDirectory -Recurse -Force
+            }
+          }
 
       - name: Attest VSIX build provenance
         id: attest-vsix
@@ -129,52 +164,58 @@ jobs:
           VSIX_FILE_NAME: ${{ needs.package.outputs.vsix_file_name }}
           TESTER_BUNDLE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.zip
           GH_TOKEN: ${{ github.token }}
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [[ ! "$RELEASE_VERSION" =~ ^1\.1\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Release version must use the current 1.1.<patch> format." >&2
-            exit 1
-          fi
-          latest="$(gh release view latest --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
-          if [[ ! "$latest" =~ ^1\.1\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Latest GitHub release tag '$latest' is not in the expected 1.1.<patch> format." >&2
-            exit 1
-          fi
-          release_patch="${RELEASE_VERSION##*.}"
-          latest_patch="${latest##*.}"
-          if (( release_patch < latest_patch )); then
-            echo "Release version $RELEASE_VERSION is older than the latest GitHub release $latest." >&2
-            exit 1
-          fi
-          package="$RUNNER_TEMP/marketplace-package/$VSIX_FILE_NAME"
-          if [[ ! -s "$package" ]]; then
-            echo "Expected Marketplace package was not found: $package" >&2
-            exit 1
-          fi
-          if [[ ! -s "$TESTER_BUNDLE" ]]; then
-            echo "The attested tester bundle was not found." >&2
-            exit 1
-          fi
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_VERSION -notmatch '^1\.1\.(0|[1-9][0-9]*)$') {
+            throw 'Release version must use the current 1.1.<patch> format.'
+          }
+          $releasePatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          $latestJson = gh release view latest --repo $env:GITHUB_REPOSITORY --json tagName
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not read the latest GitHub release.'
+          }
+          $latest = (($latestJson -join "`n") | ConvertFrom-Json).tagName
+          if ($latest -notmatch '^1\.1\.(0|[1-9][0-9]*)$') {
+            throw "Latest GitHub release tag '$latest' is not in the expected 1.1.<patch> format."
+          }
+          $latestPatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          if ($releasePatch -lt $latestPatch) {
+            throw "Release version $env:RELEASE_VERSION is older than the latest GitHub release $latest."
+          }
+          $package = Join-Path (Join-Path $env:RUNNER_TEMP 'marketplace-package') $env:VSIX_FILE_NAME
+          if (-not (Test-Path -LiteralPath $package -PathType Leaf) -or (Get-Item -LiteralPath $package).Length -eq 0) {
+            throw "Expected Marketplace package was not found: $package"
+          }
+          if (-not (Test-Path -LiteralPath $env:TESTER_BUNDLE -PathType Leaf) -or (Get-Item -LiteralPath $env:TESTER_BUNDLE).Length -eq 0) {
+            throw 'The attested tester bundle was not found.'
+          }
 
       - name: Verify tester bundle build provenance attestation
         env:
           GH_TOKEN: ${{ github.token }}
           TESTER_BUNDLE: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.zip
+        shell: pwsh
         run: |
-          set -euo pipefail
-          gh attestation verify "$TESTER_BUNDLE" \
-            --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          gh attestation verify $env:TESTER_BUNDLE `
+            --repo $env:GITHUB_REPOSITORY `
+            --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release.yml"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Tester bundle provenance verification failed.'
+          }
 
       - name: Verify VSIX build provenance attestation
         env:
           GH_TOKEN: ${{ github.token }}
           VSIX_FILE: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
+        shell: pwsh
         run: |
-          set -euo pipefail
-          gh attestation verify "$VSIX_FILE" \
-            --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          gh attestation verify $env:VSIX_FILE `
+            --repo $env:GITHUB_REPOSITORY `
+            --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release.yml"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'VSIX provenance verification failed.'
+          }
 
       - name: Sign in with GitHub OIDC
         uses: azure/login@v3.1.0
@@ -201,29 +242,34 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           MARKETPLACE_VERSION: ${{ steps.marketplace-version.outputs.current-version }}
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [[ "$MARKETPLACE_VERSION" == '0.0.0' ]]; then
-            marketplace_patch=0
-          elif [[ "$MARKETPLACE_VERSION" =~ ^1\.1\.(0|[1-9][0-9]*)$ ]]; then
-            marketplace_patch="${BASH_REMATCH[1]}"
-          else
-            echo "Marketplace version '$MARKETPLACE_VERSION' is not in the expected 1.1.<patch> format." >&2
-            exit 1
-          fi
+          $ErrorActionPreference = 'Stop'
+          if ($env:MARKETPLACE_VERSION -eq '0.0.0') {
+            $marketplacePatch = 0L
+          }
+          elseif ($env:MARKETPLACE_VERSION -match '^1\.1\.(0|[1-9][0-9]*)$') {
+            $marketplacePatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          }
+          else {
+            throw "Marketplace version '$env:MARKETPLACE_VERSION' is not in the expected 1.1.<patch> format."
+          }
 
-          release_patch="${RELEASE_VERSION##*.}"
-          if (( release_patch < marketplace_patch )); then
-            echo "Release version $RELEASE_VERSION is older than the current Marketplace version $MARKETPLACE_VERSION." >&2
-            exit 1
-          fi
+          if ($env:RELEASE_VERSION -notmatch '^1\.1\.(0|[1-9][0-9]*)$') {
+            throw 'Release version must use the current 1.1.<patch> format.'
+          }
+          $releasePatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          if ($releasePatch -lt $marketplacePatch) {
+            throw "Release version $env:RELEASE_VERSION is older than the current Marketplace version $env:MARKETPLACE_VERSION."
+          }
 
-          if (( release_patch == marketplace_patch )); then
-            echo "publish_required=false" >> "$GITHUB_OUTPUT"
-            echo "Marketplace already has version $RELEASE_VERSION; skipping duplicate publication."
-          else
-            echo "publish_required=true" >> "$GITHUB_OUTPUT"
-          fi
+          if ($releasePatch -eq $marketplacePatch) {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'publish_required=false' -Encoding utf8
+            Write-Output "Marketplace already has version $env:RELEASE_VERSION; skipping duplicate publication."
+          }
+          else {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'publish_required=true' -Encoding utf8
+          }
 
       - name: Publish extension to Visual Studio Marketplace
         if: ${{ steps.release-state.outputs.publish_required == 'true' }}
@@ -242,16 +288,18 @@ jobs:
         env:
           ATTESTED_VSIX: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
           PUBLISHED_VSIX: ${{ steps.publish.outputs.vsix-file }}
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [[ ! -s "$PUBLISHED_VSIX" ]]; then
-            echo "The Marketplace publish action did not return its VSIX file." >&2
-            exit 1
-          fi
-          if [[ "$(sha256sum "$ATTESTED_VSIX" | cut -d ' ' -f 1)" != "$(sha256sum "$PUBLISHED_VSIX" | cut -d ' ' -f 1)" ]]; then
-            echo "The Marketplace publish action changed the attested VSIX." >&2
-            exit 1
-          fi
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath $env:PUBLISHED_VSIX -PathType Leaf) -or
+              (Get-Item -LiteralPath $env:PUBLISHED_VSIX).Length -eq 0) {
+            throw 'The Marketplace publish action did not return its VSIX file.'
+          }
+          $attestedHash = (Get-FileHash -LiteralPath $env:ATTESTED_VSIX -Algorithm SHA256).Hash
+          $publishedHash = (Get-FileHash -LiteralPath $env:PUBLISHED_VSIX -Algorithm SHA256).Hash
+          if ($attestedHash -cne $publishedHash) {
+            throw 'The Marketplace publish action changed the attested VSIX.'
+          }
 
       - name: Download already-published VSIX for an idempotent retry
         if: ${{ steps.release-state.outputs.publish_required == 'false' }}
@@ -270,19 +318,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ATTESTED_VSIX: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
           PUBLISHED_VSIX: ${{ steps.download-published.outputs.vsix-file }}
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [[ ! -s "$PUBLISHED_VSIX" ]]; then
-            echo "The existing Marketplace version could not be downloaded." >&2
-            exit 1
-          fi
-          if [[ "$(sha256sum "$ATTESTED_VSIX" | cut -d ' ' -f 1)" != "$(sha256sum "$PUBLISHED_VSIX" | cut -d ' ' -f 1)" ]]; then
-            echo "The existing Marketplace VSIX differs from the attested package; refusing to publish a mismatched GitHub asset." >&2
-            exit 1
-          fi
-          gh attestation verify "$PUBLISHED_VSIX" \
-            --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath $env:PUBLISHED_VSIX -PathType Leaf) -or
+              (Get-Item -LiteralPath $env:PUBLISHED_VSIX).Length -eq 0) {
+            throw 'The existing Marketplace version could not be downloaded.'
+          }
+          $attestedHash = (Get-FileHash -LiteralPath $env:ATTESTED_VSIX -Algorithm SHA256).Hash
+          $publishedHash = (Get-FileHash -LiteralPath $env:PUBLISHED_VSIX -Algorithm SHA256).Hash
+          if ($attestedHash -cne $publishedHash) {
+            throw 'The existing Marketplace VSIX differs from the attested package; refusing to publish a mismatched GitHub asset.'
+          }
+          gh attestation verify $env:PUBLISHED_VSIX `
+            --repo $env:GITHUB_REPOSITORY `
+            --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release.yml"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Published VSIX provenance verification failed.'
+          }
 
       - name: Wait for Marketplace validation
         uses: jessehouwing/azdo-marketplace/wait-for-validation@v6.4.1
@@ -301,37 +354,51 @@ jobs:
           TESTER_BUNDLE_PATH: ${{ runner.temp }}/release-binaries/ServerTaskExpressionTester.zip
           VSIX_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.vsix_attestation_url }}
           TESTER_BUNDLE_ATTESTATION_URL: ${{ needs.attest-release-artifacts.outputs.tester_bundle_attestation_url }}
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [[ -z "$VSIX_ATTESTATION_URL" || -z "$TESTER_BUNDLE_ATTESTATION_URL" ]]; then
-            echo "A release artifact provenance attestation URL is missing." >&2
-            exit 1
-          fi
-          releases="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft)"
-          existing="$(jq -c --arg version "$RELEASE_VERSION" '[.[] | select(.tagName == $version)]' <<< "$releases")"
-          existing_count="$(jq 'length' <<< "$existing")"
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:VSIX_ATTESTATION_URL) -or
+              [string]::IsNullOrWhiteSpace($env:TESTER_BUNDLE_ATTESTATION_URL)) {
+            throw 'A release artifact provenance attestation URL is missing.'
+          }
 
-          if (( existing_count > 1 )); then
-            echo "Multiple GitHub releases exist for $RELEASE_VERSION." >&2
-            exit 1
-          elif (( existing_count == 1 )); then
-            is_draft="$(jq -r '.[0].isDraft' <<< "$existing")"
-            if [[ "$is_draft" != 'true' ]]; then
-              echo "GitHub release $RELEASE_VERSION already exists; skipping duplicate creation."
+          $releaseList = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName,isDraft
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not list existing GitHub releases.'
+          }
+          $releases = @(($releaseList -join "`n") | ConvertFrom-Json)
+          $existing = @($releases | Where-Object { $_.tagName -ceq $env:RELEASE_VERSION })
+          if ($existing.Count -gt 1) {
+            throw "Multiple GitHub releases exist for $env:RELEASE_VERSION."
+          }
+          if ($existing.Count -eq 1) {
+            if (-not $existing[0].isDraft) {
+              Write-Output "GitHub release $env:RELEASE_VERSION already exists; skipping duplicate creation."
               exit 0
-            fi
-            gh release delete "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --yes
-          fi
+            }
+            gh release delete $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --yes
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not delete the existing draft release $env:RELEASE_VERSION."
+            }
+          }
 
-          notes="## Build provenance
-
-          - VSIX attestation: $VSIX_ATTESTATION_URL
-          - Tester bundle attestation: $TESTER_BUNDLE_ATTESTATION_URL"
-          gh release create "$RELEASE_VERSION" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$RELEASE_VERSION" \
-            --generate-notes \
-            --notes "$notes" \
-            --target "$GITHUB_SHA" \
-            "$VSIX_PATH" \
-            "$TESTER_BUNDLE_PATH"
+          $notes = @(
+            '## Build provenance'
+            ''
+            "- VSIX attestation: $env:VSIX_ATTESTATION_URL"
+            "- Tester bundle attestation: $env:TESTER_BUNDLE_ATTESTATION_URL"
+          ) -join "`n"
+          $arguments = @(
+            'release', 'create', $env:RELEASE_VERSION,
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--title', $env:RELEASE_VERSION,
+            '--generate-notes',
+            '--notes', $notes,
+            '--target', $env:GITHUB_SHA,
+            $env:VSIX_PATH,
+            $env:TESTER_BUNDLE_PATH
+          )
+          gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub Release creation failed.'
+          }
