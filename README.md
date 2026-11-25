@@ -62,12 +62,12 @@ The `gate-condition-editor` artifact contains only the executable, its configura
 and symbols, never the installer or server assemblies. The workflow also packages
 the Marketplace extension and uploads the VSIX as a separate, short-lived
 `gate-condition-editor-vsix` artifact. The eight-DLL Actions cache is disabled by
-default and cannot run in a public repository: public-repository caches can be
-accessed by fork pull requests, and permission for private storage alone does not
-establish redistribution rights. For a private repository, enable it only after
-establishing the applicable rights by setting `SERVER_DLL_CACHE_ENABLED` to `true`.
-Otherwise the workflow installs the verified installer. DLLs are never uploaded as
-workflow artifacts or included in the VSIX.
+default; enable it by setting `SERVER_DLL_CACHE_ENABLED` to `true` after establishing
+the applicable rights. GitHub makes base-branch caches available to fork pull
+request workflows, so the regular workflow skips cache restore on fork PR runs, but
+the cache is not a confidentiality boundary. Otherwise the workflow installs the
+verified installer. DLLs are never uploaded as workflow artifacts or included in
+the VSIX.
 
 ### GitHub Actions release
 
