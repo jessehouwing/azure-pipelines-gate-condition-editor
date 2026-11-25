@@ -59,7 +59,53 @@ When updating the installer, update its versioned URL and SHA-256 together after
 verifying its Microsoft signature.
 
 The `gate-condition-editor` artifact contains only the executable, its configuration
-and symbols, never the installer or server assemblies. The workflow does not
-publish a release or Marketplace extension and does not include ORAS packaging.
+and symbols, never the installer or server assemblies. The workflow also packages
+the Marketplace extension and uploads the VSIX as a separate, short-lived
+`gate-condition-editor-vsix` artifact. The eight-DLL Actions cache is disabled by
+default; enable it by setting `SERVER_DLL_CACHE_ENABLED` to `true` after establishing
+the applicable rights. GitHub makes base-branch caches available to fork pull
+request workflows, so the regular workflow skips cache restore on fork PR runs, but
+the cache is not a confidentiality boundary. Otherwise the workflow installs the
+verified installer. DLLs are never uploaded as workflow artifacts or included in
+the VSIX.
+
+### GitHub Actions release
+
+The `Release gate condition editor` workflow replaces the Azure Pipelines
+Marketplace/GitHub release steps. It can be started manually from `main`; enter the
+next `1.1.<patch>` version (greater than the latest GitHub release) and leave
+`publish_marketplace` unchecked to package only. Publishing requires explicitly
+checking that input and passing the `marketplace-production` GitHub Environment
+gate. Packaging and publishing use the `azdo-marketplace` package, query-version,
+publish, and wait-for-validation actions. The publish action uses GitHub OIDC
+through Azure login; no PAT or direct TFX invocation is used.
+
+A PowerShell step bundles `ServerTaskExpressionTester.exe` and its PDB into a ZIP.
+The VSIX and that ZIP are attested with GitHub build provenance and verified before
+publication. The release job attaches the same attested ZIP alongside the VSIX and
+links both attestations from the GitHub Release. The release queries the current
+Marketplace version and skips a duplicate publish when that version is already
+present; in that case it downloads the published VSIX and requires its digest to
+match the attested package. Before the Marketplace approval gate, the workflow
+creates a GitHub draft containing the attested VSIX and tester ZIP. Retries reuse
+and re-verify those exact draft assets rather than deleting or replacing them, so
+they can recover even if a later build produces different bytes. After Marketplace
+validation, the workflow publishes the draft once by changing it from draft to
+published; an already-published release is verified and left unchanged. Enable
+GitHub immutable releases in repository settings to prevent changes after that
+final publication.
+
+The `marketplace-production` environment is configured to allow deployments from
+`main` and require the sole maintainer as reviewer. **Prevent self-review** is
+disabled so the maintainer can approve their own release. The environment contains
+the non-secret `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` variables, and the Entra app
+has a federated credential for this repository and environment. The app must remain
+a member of the `jessehouwing` Marketplace publisher. Azure DevOps Pipeline workload
+identity federation does not automatically grant GitHub Actions federation.
+
+The legacy `azure-pipelines.yml` continues building and publishing its pipeline
+artifact, but no longer publishes to the Marketplace or creates GitHub Releases.
+No ORAS packaging is used.
+
 Running the downloaded executable still requires a local Azure DevOps Server
 installation as described above.

@@ -1,0 +1,414 @@
+name: Release gate condition editor
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Next Marketplace and GitHub release version (for example 1.1.53)
+        required: true
+        type: string
+      publish_marketplace:
+        description: Publish to the Marketplace and create a GitHub Release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketplace-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    uses: $/.github/workflows/build.yml
+    permissions:
+      contents: read
+    with:
+      extension_version: ${{ inputs.version }}
+
+  attest-release-artifacts:
+    if: ${{ inputs.publish_marketplace && github.ref == 'refs/heads/main' }}
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    outputs:
+      vsix_attestation_url: ${{ steps.attest-vsix.outputs.attestation-url }}
+      tester_bundle_attestation_url: ${{ steps.attest-tester-bundle.outputs.attestation-url }}
+
+    steps:
+      - name: Download Marketplace package
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor-vsix
+          path: ${{ runner.temp }}/marketplace-package
+
+      - name: Download executable release artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor
+          path: ${{ runner.temp }}/release-binaries
+
+      - name: Bundle executable and symbols
+        env:
+          BUNDLE_PATH: ${{ runner.temp }}/ServerTaskExpressionTester.zip
+          RELEASE_BINARY_DIRECTORY: ${{ runner.temp }}/release-binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            (Join-Path $env:RELEASE_BINARY_DIRECTORY 'ServerTaskExpressionTester.exe')
+            (Join-Path $env:RELEASE_BINARY_DIRECTORY 'ServerTaskExpressionTester.pdb')
+          )
+          Compress-Archive -LiteralPath $files -DestinationPath $env:BUNDLE_PATH -CompressionLevel Optimal
+
+      - name: Attest VSIX build provenance
+        id: attest-vsix
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/marketplace-package/${{ needs.package.outputs.vsix_file_name }}
+
+      - name: Attest tester bundle build provenance
+        id: attest-tester-bundle
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/ServerTaskExpressionTester.zip
+
+      - name: Upload attested tester bundle
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: gate-condition-editor-release-bundle
+          path: ${{ runner.temp }}/ServerTaskExpressionTester.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  prepare-github-release:
+    if: ${{ inputs.publish_marketplace && github.ref == 'refs/heads/main' }}
+    needs: [package, attest-release-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: read
+      contents: write
+    outputs:
+      vsix_file_name: ${{ steps.release-assets.outputs.vsix_file_name }}
+
+    steps:
+      - name: Download candidate VSIX
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor-vsix
+          path: ${{ runner.temp }}/candidate-assets
+
+      - name: Download attested tester bundle
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor-release-bundle
+          path: ${{ runner.temp }}/candidate-assets
+
+      - name: Create or recover the GitHub draft
+        id: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          CANDIDATE_VSIX_NAME: ${{ needs.package.outputs.vsix_file_name }}
+          ATTESTED_VSIX_URL: ${{ needs.attest-release-artifacts.outputs.vsix_attestation_url }}
+          ATTESTED_BUNDLE_URL: ${{ needs.attest-release-artifacts.outputs.tester_bundle_attestation_url }}
+          ASSET_DIRECTORY: ${{ runner.temp }}/verified-release-assets
+          CANDIDATE_DIRECTORY: ${{ runner.temp }}/candidate-assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_VERSION -notmatch '^1\.1\.(0|[1-9][0-9]*)$') {
+            throw 'Release version must use the current 1.1.<patch> format.'
+          }
+          $releasePatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          $latestJson = gh release view --repo $env:GITHUB_REPOSITORY --json tagName
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not read the latest GitHub release.'
+          }
+          $latest = (($latestJson -join "`n") | ConvertFrom-Json).tagName
+          if ($latest -notmatch '^1\.1\.(0|[1-9][0-9]*)$') {
+            throw "Latest GitHub release tag '$latest' is not in the expected 1.1.<patch> format."
+          }
+          $latestPatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          if ($releasePatch -lt $latestPatch) {
+            throw "Release version $env:RELEASE_VERSION is older than the latest GitHub release $latest."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:ATTESTED_VSIX_URL) -or
+              [string]::IsNullOrWhiteSpace($env:ATTESTED_BUNDLE_URL)) {
+            throw 'Build provenance URLs are missing.'
+          }
+
+          $bundleName = 'ServerTaskExpressionTester.zip'
+          $candidateVsix = Join-Path $env:CANDIDATE_DIRECTORY $env:CANDIDATE_VSIX_NAME
+          $candidateBundle = Join-Path $env:CANDIDATE_DIRECTORY $bundleName
+          if (-not (Test-Path -LiteralPath $candidateVsix -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $candidateBundle -PathType Leaf)) {
+            throw 'The candidate VSIX or tester bundle is missing.'
+          }
+
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $release = $null
+          try {
+            $release = Invoke-RestMethod `
+              -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_VERSION" `
+              -Headers $headers -Method Get
+          }
+          catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw "Could not inspect release $env:RELEASE_VERSION (HTTP $statusCode)."
+            }
+          }
+
+          if ($release -and $release.tag_name -cne $env:RELEASE_VERSION) {
+            throw 'The GitHub API returned a release for a different tag.'
+          }
+          $assetDirectory = $env:ASSET_DIRECTORY
+          if (Test-Path -LiteralPath $assetDirectory) {
+            Remove-Item -LiteralPath $assetDirectory -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $assetDirectory | Out-Null
+
+          if (-not $release) {
+            $notes = @(
+              '## Build provenance'
+              ''
+              "- VSIX attestation: $env:ATTESTED_VSIX_URL"
+              "- Tester bundle attestation: $env:ATTESTED_BUNDLE_URL"
+            ) -join "`n"
+            gh release create $env:RELEASE_VERSION `
+              --repo $env:GITHUB_REPOSITORY `
+              --title $env:RELEASE_VERSION `
+              --draft `
+              --generate-notes `
+              --notes $notes `
+              --target $env:GITHUB_SHA `
+              $candidateVsix `
+              $candidateBundle
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Could not create the GitHub draft release.'
+            }
+          }
+          else {
+            $expectedAssets = @($env:CANDIDATE_VSIX_NAME, $bundleName) | Sort-Object -CaseSensitive
+            $existingAssets = @($release.assets | ForEach-Object { $_.name } | Sort-Object -CaseSensitive)
+            if (Compare-Object -ReferenceObject $expectedAssets -DifferenceObject $existingAssets -CaseSensitive) {
+              throw "Existing release $env:RELEASE_VERSION does not have exactly the expected VSIX and tester ZIP assets; refusing to alter it."
+            }
+          }
+
+          gh release download $env:RELEASE_VERSION `
+            --repo $env:GITHUB_REPOSITORY `
+            --dir $assetDirectory `
+            --pattern $env:CANDIDATE_VSIX_NAME `
+            --pattern $bundleName
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not download the GitHub release assets for $env:RELEASE_VERSION."
+          }
+
+          $actualAssets = @(Get-ChildItem -LiteralPath $assetDirectory -File | ForEach-Object Name | Sort-Object -CaseSensitive)
+          $expectedAssets = @($env:CANDIDATE_VSIX_NAME, $bundleName) | Sort-Object -CaseSensitive
+          if (Compare-Object -ReferenceObject $expectedAssets -DifferenceObject $actualAssets -CaseSensitive) {
+            throw 'The recovered GitHub release assets do not match the expected files.'
+          }
+
+          $vsixPath = Join-Path $assetDirectory $env:CANDIDATE_VSIX_NAME
+          $bundlePath = Join-Path $assetDirectory $bundleName
+          foreach ($artifact in @($vsixPath, $bundlePath)) {
+            gh attestation verify $artifact `
+              --repo $env:GITHUB_REPOSITORY `
+              --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release.yml" `
+              --source-ref refs/heads/main
+            if ($LASTEXITCODE -ne 0) {
+              throw "Build provenance verification failed for $artifact."
+            }
+          }
+
+          "vsix_file_name=$env:CANDIDATE_VSIX_NAME" >> $env:GITHUB_OUTPUT
+
+      - name: Upload verified release assets for Marketplace publication
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: gate-condition-editor-verified-release-assets
+          path: ${{ runner.temp }}/verified-release-assets/*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    if: ${{ inputs.publish_marketplace && github.ref == 'refs/heads/main' }}
+    needs: [package, prepare-github-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: marketplace-production
+    permissions:
+      attestations: read
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gate-condition-editor-verified-release-assets
+          path: ${{ runner.temp }}/verified-release-assets
+
+      - name: Sign in with GitHub OIDC
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+          audience: api://AzureADTokenExchange
+
+      - name: Query current Marketplace version
+        id: marketplace-version
+        uses: jessehouwing/azdo-marketplace/query-version@v6.4.1
+        with:
+          auth-type: oidc
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          version-source: marketplace
+          marketplace-version-action: None
+
+      - name: Decide whether to publish
+        id: release-state
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          MARKETPLACE_VERSION: ${{ steps.marketplace-version.outputs.current-version }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:MARKETPLACE_VERSION -match '^1\.1\.(0|[1-9][0-9]*)$') {
+            $marketplacePatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          }
+          else {
+            throw "Marketplace version '$env:MARKETPLACE_VERSION' is not in the expected 1.1.<patch> format."
+          }
+
+          if ($env:RELEASE_VERSION -notmatch '^1\.1\.(0|[1-9][0-9]*)$') {
+            throw 'Release version must use the current 1.1.<patch> format.'
+          }
+          $releasePatch = [long]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+          if ($releasePatch -lt $marketplacePatch) {
+            throw "Release version $env:RELEASE_VERSION is older than the current Marketplace version $env:MARKETPLACE_VERSION."
+          }
+
+          if ($releasePatch -eq $marketplacePatch) {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'publish_required=false' -Encoding utf8
+            Write-Output "Marketplace already has version $env:RELEASE_VERSION; skipping duplicate publication."
+          }
+          else {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'publish_required=true' -Encoding utf8
+          }
+
+      - name: Publish extension to Visual Studio Marketplace
+        if: ${{ steps.release-state.outputs.publish_required == 'true' }}
+        id: publish
+        uses: jessehouwing/azdo-marketplace/publish@v6.4.1
+        with:
+          auth-type: oidc
+          use: vsix
+          vsix-file: ${{ runner.temp }}/verified-release-assets/${{ needs.prepare-github-release.outputs.vsix_file_name }}
+          no-wait-validation: true
+
+      - name: Verify published task preserved the attested VSIX
+        if: ${{ steps.release-state.outputs.publish_required == 'true' }}
+        env:
+          ATTESTED_VSIX: ${{ runner.temp }}/verified-release-assets/${{ needs.prepare-github-release.outputs.vsix_file_name }}
+          PUBLISHED_VSIX: ${{ steps.publish.outputs.vsix-file }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath $env:PUBLISHED_VSIX -PathType Leaf) -or
+              (Get-Item -LiteralPath $env:PUBLISHED_VSIX).Length -eq 0) {
+            throw 'The Marketplace publish action did not return its VSIX file.'
+          }
+          $attestedHash = (Get-FileHash -LiteralPath $env:ATTESTED_VSIX -Algorithm SHA256).Hash
+          $publishedHash = (Get-FileHash -LiteralPath $env:PUBLISHED_VSIX -Algorithm SHA256).Hash
+          if ($attestedHash -cne $publishedHash) {
+            throw 'The Marketplace publish action changed the attested VSIX.'
+          }
+
+      - name: Download already-published VSIX for an idempotent retry
+        if: ${{ steps.release-state.outputs.publish_required == 'false' }}
+        id: download-published
+        uses: jessehouwing/azdo-marketplace/download-vsix@v6.4.1
+        with:
+          auth-type: oidc
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          version: ${{ inputs.version }}
+          output-path: ${{ runner.temp }}/published-marketplace-package
+
+      - name: Verify existing Marketplace package matches this attestation
+        if: ${{ steps.release-state.outputs.publish_required == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTED_VSIX: ${{ runner.temp }}/verified-release-assets/${{ needs.prepare-github-release.outputs.vsix_file_name }}
+          PUBLISHED_VSIX: ${{ steps.download-published.outputs.vsix-file }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath $env:PUBLISHED_VSIX -PathType Leaf) -or
+              (Get-Item -LiteralPath $env:PUBLISHED_VSIX).Length -eq 0) {
+            throw 'The existing Marketplace version could not be downloaded.'
+          }
+          $attestedHash = (Get-FileHash -LiteralPath $env:ATTESTED_VSIX -Algorithm SHA256).Hash
+          $publishedHash = (Get-FileHash -LiteralPath $env:PUBLISHED_VSIX -Algorithm SHA256).Hash
+          if ($attestedHash -cne $publishedHash) {
+            throw 'The existing Marketplace VSIX differs from the attested package; refusing to publish a mismatched GitHub asset.'
+          }
+          gh attestation verify $env:PUBLISHED_VSIX `
+            --repo $env:GITHUB_REPOSITORY `
+            --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release.yml" `
+            --source-ref refs/heads/main
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Published VSIX provenance verification failed.'
+          }
+
+      - name: Wait for Marketplace validation
+        uses: jessehouwing/azdo-marketplace/wait-for-validation@v6.4.1
+        with:
+          auth-type: oidc
+          publisher-id: jessehouwing
+          extension-id: gate-condition-editor
+          vsix-file: ${{ steps.publish.outputs.vsix-file || steps.download-published.outputs.vsix-file }}
+          timeout-minutes: '30'
+
+      - name: Publish the verified GitHub draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseJson = gh release view $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --json tagName,isDraft
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not verify GitHub release $env:RELEASE_VERSION after Marketplace validation."
+          }
+          $release = ($releaseJson -join "`n") | ConvertFrom-Json
+          if ($release.tagName -cne $env:RELEASE_VERSION) {
+            throw 'GitHub returned a different release tag.'
+          }
+          if ($release.isDraft) {
+            gh release edit $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --draft=false
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Could not publish the verified GitHub draft.'
+            }
+          }
+          else { Write-Output "GitHub release $env:RELEASE_VERSION is already published; leaving it unchanged." }
