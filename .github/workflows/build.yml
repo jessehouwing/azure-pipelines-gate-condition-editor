@@ -45,7 +45,8 @@ jobs:
 
       - name: Restore verified Server DLL cache
         id: server-dll-cache
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        # Public-repository caches are accessible to fork PRs.
+        if: ${{ github.event.repository.private && vars.SERVER_DLL_CACHE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.temp }}\server-dll-cache
@@ -139,7 +140,7 @@ jobs:
           -TfsInstallationDirectory "$env:TfsInstallationDirectory"
 
       - name: Stage verified Server DLLs for cache
-        if: ${{ steps.server-dll-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ github.event.repository.private && vars.SERVER_DLL_CACHE_ENABLED == 'true' && steps.server-dll-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -147,7 +148,7 @@ jobs:
           & tests\ServerDllCache.ps1 -Mode Populate -CacheDirectory $cache -SourceDirectory $env:TfsInstallationDirectory
 
       - name: Save verified Server DLL cache
-        if: ${{ steps.server-dll-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ github.event.repository.private && vars.SERVER_DLL_CACHE_ENABLED == 'true' && steps.server-dll-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@v6.1.0
         with:
           path: ${{ runner.temp }}\server-dll-cache

@@ -61,20 +61,13 @@ verifying its Microsoft signature.
 The `gate-condition-editor` artifact contains only the executable, its configuration
 and symbols, never the installer or server assemblies. The workflow also packages
 the Marketplace extension and uploads the VSIX as a separate, short-lived
-`gate-condition-editor-vsix` artifact. The maintainer has confirmed permission for
-private Actions-cache storage; the workflow caches only the eight
-Microsoft-signed DLLs used by the build and smoke test, preserving their `Tools` and
-`Tools\Plugins` relative paths. On a cache miss, it verifies the official installer's
-SHA-256 and Microsoft Authenticode signature before installing and staging those
-DLLs. On a hit, it checks the exact file set, Authenticode signatures and assembly
-identities before building and running the smoke test against the cache directory.
-Fork pull requests do not restore the cache; only `main` can populate it. DLLs are
-never uploaded as workflow artifacts or included in the VSIX.
-
-This repository's existing documentation notes that Azure DevOps Server assemblies
-cannot be redistributed. The maintainer has confirmed that private GitHub
-Actions-cache storage is permitted for this use; the cache is restricted to the
-verified DLLs and is not exposed as a workflow artifact or in the VSIX.
+`gate-condition-editor-vsix` artifact. The eight-DLL Actions cache is disabled by
+default and cannot run in a public repository: public-repository caches can be
+accessed by fork pull requests, and permission for private storage alone does not
+establish redistribution rights. For a private repository, enable it only after
+establishing the applicable rights by setting `SERVER_DLL_CACHE_ENABLED` to `true`.
+Otherwise the workflow installs the verified installer. DLLs are never uploaded as
+workflow artifacts or included in the VSIX.
 
 ### GitHub Actions release
 
@@ -93,9 +86,14 @@ publication. The release job attaches the same attested ZIP alongside the VSIX a
 links both attestations from the GitHub Release. The release queries the current
 Marketplace version and skips a duplicate publish when that version is already
 present; in that case it downloads the published VSIX and requires its digest to
-match the attested package. Older versions are rejected. It skips an existing
-published GitHub Release and replaces only an existing draft, making retries safe
-after partial failures.
+match the attested package. Before the Marketplace approval gate, the workflow
+creates a GitHub draft containing the attested VSIX and tester ZIP. Retries reuse
+and re-verify those exact draft assets rather than deleting or replacing them, so
+they can recover even if a later build produces different bytes. After Marketplace
+validation, the workflow publishes the draft once by changing it from draft to
+published; an already-published release is verified and left unchanged. Enable
+GitHub immutable releases in repository settings to prevent changes after that
+final publication.
 
 The `marketplace-production` environment is configured to allow deployments from
 `main` and require the sole maintainer as reviewer. **Prevent self-review** is
